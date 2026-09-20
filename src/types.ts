@@ -4,7 +4,7 @@ export type Trait = typeof TRAITS[number];
 export type Fields = Record<string, string | boolean | number | null>;
 export type ItemKind = "class" | "subclass" | "ancestry" | "community" | "domainCard" | "weapon" | "armor" | "loot" | "consumable" | "feature";
 export interface Issue { code: string; message: string; field?: string; blocking?: boolean; }
-export interface Experience { name: string; value: number | null; description?: string; }
+export interface Experience { name: string; value: number | null; description?: string; fields?: string[]; }
 export interface Entry {
   id: string; kind: ItemKind; name: string; description: string; fields: string[];
   className?: string; isMulticlass?: boolean; featureState?: number;

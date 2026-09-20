@@ -1,6 +1,8 @@
-Demiplane PDF Importer for Foundryborne — initial testing release.
+Demiplane PDF Importer for Foundryborne — 0.1.1.
 
-Imports form-bearing Demiplane PDFs through a GM review wizard, with installed-content matching, editable unmatched items, stat reconciliation, multiclass and mixed ancestry review, and linked companions. PDF extraction runs locally with bundled PDF.js.
+Fixes the preview preparing the character twice, which doubled class Evasion and HP and produced incorrect PDF adjustments. For example, a Druid's base Evasion now previews as 10 rather than 20, and maximum HP as 6 rather than 12.
+
+Experiences removed during review are explicitly identified as excluded in the report, with their original PDF values retained. Experience names are read from the PDF and can be removed if the export contains an unwanted entry.
 
 Target: Foundry 14.367 and Foundryborne Daggerheart 2.10.2. Automated extraction, mapping and transaction tests pass. Live Foundry acceptance tests are still pending; see VALIDATION.md before using this initial release in a campaign.
 

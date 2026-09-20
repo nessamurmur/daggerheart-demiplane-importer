@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adjustmentEffects, buildPlan, executePlan, loadCatalog, makeReport, sanitizeSource } from "../src/importer.ts";
+import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID } from "../src/types.ts";
 import { character, mockRuntime } from "./helpers.ts";
@@ -13,6 +13,39 @@ test("planning is read-only and stat decisions are required", async () => {
   assert.equal(plan.comparisons.find(x => x.label === "Evasion")!.calculated, 10);
   assert.equal(plan.comparisons[0].choice, null);
   await assert.rejects(executePlan(plan, runtime), /Complete the review/);
+});
+
+test("Foundry preview uses the constructor's prepared stats without doubling class bonuses", () => {
+  const saved = { game: (globalThis as any).game, CONFIG: (globalThis as any).CONFIG };
+  class PreparedActor {
+    system: any; preparations = 0;
+    constructor(source: any) { this.system = structuredClone(source.system); this.prepareData(); }
+    prepareData() { this.preparations++; this.system.evasion += 10; this.system.resources.hitPoints.max += 6; }
+  }
+  try {
+    (globalThis as any).game = { system: { version: "2.10.2" }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
+    (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { DOMAIN: { allDomains: () => ({}) } } };
+    const source = { system: { evasion: 0, resources: { hitPoints: { max: 0 } } } };
+    const actor = foundryRuntime().preview(source);
+    assert.equal(actor.preparations, 1);
+    assert.equal(actor.system.evasion, 10); assert.equal(actor.system.resources.hitPoints.max, 6);
+    assert.equal(source.system.evasion, 0);
+    const correction = adjustmentEffects([{ path: "system.evasion", label: "Evasion", pdf: 8, calculated: actor.system.evasion, choice: "pdf" }], () => "effect")[0];
+    assert.equal(actor.system.evasion + correction.system.changes[0].value, 8);
+  } finally { Object.assign(globalThis, saved); }
+});
+
+test("removed experiences are reported while renamed retained experiences keep their provenance", async () => {
+  const c = character({ "experience_name.0": "Keep me", "experience_bonus.0": "2", "experience_name.1": "Unwanted export entry", "experience_bonus.1": "" });
+  c.experiences.splice(1, 1); c.experiences[0].name = "Reviewed name";
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  const report = makeReport(plan, "test");
+  assert.equal(report.fieldDisposition["experience_name.0"], "imported");
+  assert.equal(report.fieldDisposition["experience_name.1"], "reported");
+  assert.equal(report.reviewedCharacter.source.fields["experience_name.1"], "Unwanted export entry");
+  assert.equal(Object.keys(plan.actorData.system.experiences).length, 1);
 });
 test("matched items preserve rules, effects, source identity and character state", async () => {
   const c = character({ primary_weapon_name: "Test Blade", primary_weapon_trait: "Strength Melee", primary_weapon_damage: "1d8 Physical" });

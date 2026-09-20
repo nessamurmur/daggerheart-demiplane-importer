@@ -110,7 +110,7 @@ export function parseFields(fields: Fields, fileName = "character.pdf", fingerpr
   const experiences: Experience[] = [];
   for (const key of Object.keys(fields).filter(k => /^experience_name\.\d+$/.test(k))) {
     const n = str(key), bonus = num(key.replace("_name", "_bonus"));
-    if (n) experiences.push({ name: n, value: bonus });
+    if (n) experiences.push({ name: n, value: bonus, fields: [key, key.replace("_name", "_bonus")] });
   }
   const classFeatures = Object.keys(fields).filter(k => /^classfeature\.\d+$/.test(k)).map(str).filter(Boolean);
   const hopeFeature = str("hope_feature");
