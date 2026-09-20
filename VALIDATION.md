@@ -2,14 +2,14 @@
 
 Target environment: Foundry 14.367, Foundryborne Daggerheart 2.10.2.
 
-Status: 0.1.1 fixes the stat-preview preparation defect found in the first live import attempt. Full live acceptance remains in progress.
+Status: 0.1.2 fixes the stat-preview preparation defect found in the first live import attempt. Full live acceptance remains in progress.
 
 ## Automated checks
 
 Validated on 2026-09-19 with the pinned dependencies in `pnpm-lock.yaml`:
 
 - TypeScript type checking passes.
-- 33 tests pass when both private PDFs and the external Foundryborne 2.10.2 reference checkout are present, including stable manifest URLs, version-specific downloads, rejection of mismatched release versions, constructor preparation regression coverage, and removed-experience reporting.
+- 32 tests pass when both private PDFs and the external Foundryborne 2.10.2 reference checkout are present, including stable manifest URLs, version-specific downloads, rejection of mismatched release versions, and constructor preparation regression coverage.
 - Both original PDFs are extracted through PDF.js, including page annotations outside the canonical field tree. No sample PDFs or upstream game content are included in the distribution.
 - Jen: all nine content entries resolve uniquely against the upstream catalog. Traits, experiences, zero values, Hope checkboxes, equipped weapons, archived cards, and malformed armor thresholds are checked. The mapping preserves Leather Armor's base score 3 and exactly one native Round Shield armor effect.
 - Ex Ampleton: missing level and experience bonuses remain missing until review; all six zero traits survive. Repeated inventory references are detected. Summoner, Necromancy, Power Through Pain, and Blood Spike remain unmatched; Twisted Dagger resolves to SRD content.
@@ -32,7 +32,7 @@ pnpm build
 
 After 0.1.0 was installed and enabled, the Actors directory button appeared. The first live Jen preview showed Evasion 20 and HP 12: `foundryRuntime.preview` called `prepareData()` after the actor constructor had already prepared the document. That repeated the class's additive bonuses, and preserving Evasion 8 consequently applied an incorrect -12 adjustment to the real Evasion of 10. Version 0.1.1 removes the redundant preparation call.
 
-The provided `druid.pdf` contains “Folk hero” in `experience_name.2`, with no bonus; its page-one appearance stream also renders that text. It is source data, not an SRD item match. The user can remove it during review, and 0.1.1 retains that exclusion and the source value in the import report.
+The provided `druid.pdf` contains “Folk hero” in `experience_name.2`, with no bonus; its page-one appearance stream also renders that text. It is source data, not an SRD item match. Experience handling remains as in 0.1.0.
 
 The Witherwild test world reports Foundry 14.367 and Daggerheart 2.10.2. Sqyre requires the world to stop before the module manager can enter service mode. Service mode and the ZIP upload chooser were reached, but Chrome rejected `fileChooser.setFiles` with “Not allowed.” No module was uploaded and no test actors were created. The world was restarted after the attempt.
 

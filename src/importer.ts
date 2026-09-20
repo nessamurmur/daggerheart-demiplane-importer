@@ -93,10 +93,6 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   if (!runtime.isGM) throw new Error("Only a GM may import characters.");
   const issues = [...c.issues, ...validateCharacter(c)];
   for (const e of c.entries.filter(e => !e.include)) for (const field of e.fields) issues.push({ code: "excluded-item", field, message: `${e.name}: excluded during review; source data retained in the report.` });
-  for (const [field, name] of Object.entries(c.source.fields)) {
-    if (!/^experience_name\.\d+$/.test(field) || !name || c.experiences.some(e => e.fields?.includes(field))) continue;
-    for (const key of [field, field.replace("_name", "_bonus")]) issues.push({ code: "excluded-experience", field: key, message: `${name}: experience removed during review; the original PDF value is retained in the report.` });
-  }
   const actorId = runtime.id();
   const sources: DocumentSource[] = [];
   const plan: ResolvedImportPlan = { character: clone(c), resolutions: clone(resolutions), actorData: {}, itemSources: sources, comparisons: [], calculatedStats: {}, issues, systemVersion: runtime.version, reviewed: false };

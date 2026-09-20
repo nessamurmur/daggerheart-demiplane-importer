@@ -35,18 +35,6 @@ test("Foundry preview uses the constructor's prepared stats without doubling cla
   } finally { Object.assign(globalThis, saved); }
 });
 
-test("removed experiences are reported while renamed retained experiences keep their provenance", async () => {
-  const c = character({ "experience_name.0": "Keep me", "experience_bonus.0": "2", "experience_name.1": "Unwanted export entry", "experience_bonus.1": "" });
-  c.experiences.splice(1, 1); c.experiences[0].name = "Reviewed name";
-  const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
-  assert(!plan.issues.some(i => i.blocking));
-  const report = makeReport(plan, "test");
-  assert.equal(report.fieldDisposition["experience_name.0"], "imported");
-  assert.equal(report.fieldDisposition["experience_name.1"], "reported");
-  assert.equal(report.reviewedCharacter.source.fields["experience_name.1"], "Unwanted export entry");
-  assert.equal(Object.keys(plan.actorData.system.experiences).length, 1);
-});
 test("matched items preserve rules, effects, source identity and character state", async () => {
   const c = character({ primary_weapon_name: "Test Blade", primary_weapon_trait: "Strength Melee", primary_weapon_damage: "1d8 Physical" });
   const uuid = "Compendium.test.Item.weapon";
