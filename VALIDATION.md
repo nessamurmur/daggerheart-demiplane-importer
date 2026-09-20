@@ -30,13 +30,13 @@ pnpm build
 
 ## Sqyre observations and remaining acceptance
 
-After 0.1.0 was installed and enabled, the Actors directory button appeared. The first live Jen preview showed Evasion 20 and HP 12: `foundryRuntime.preview` called `prepareData()` after the actor constructor had already prepared the document. That repeated the class's additive bonuses, and preserving Evasion 8 consequently applied an incorrect -12 adjustment to the real Evasion of 10. Version 0.1.1 removes the redundant preparation call.
+After 0.1.0 was installed and enabled, the Actors directory button appeared. The first live Jen preview showed Evasion 20 and HP 12: `foundryRuntime.preview` called `prepareData()` after the actor constructor had already prepared the document. That repeated the class's additive bonuses, and preserving Evasion 8 consequently applied an incorrect -12 adjustment to the real Evasion of 10. Version 0.1.2 removes the redundant preparation call and keeps experience handling unchanged.
 
 The provided `druid.pdf` contains “Folk hero” in `experience_name.2`, with no bonus; its page-one appearance stream also renders that text. It is source data, not an SRD item match. Experience handling remains as in 0.1.0.
 
-The Witherwild test world reports Foundry 14.367 and Daggerheart 2.10.2. Sqyre requires the world to stop before the module manager can enter service mode. Service mode and the ZIP upload chooser were reached, but Chrome rejected `fileChooser.setFiles` with “Not allowed.” No module was uploaded and no test actors were created. The world was restarted after the attempt.
+On 2026-09-19, version 0.1.2 was published through GitHub Actions. The public latest manifest and its version-specific ZIP were fetched and verified to contain identical manifests, with no ZIP CRC errors. The Witherwild world (Foundry 14.367, Daggerheart 2.10.2) was stopped, then updated through Sqyre's All Available Modules manifest installer. Sqyre's installed module list confirmed 0.1.2. The world was restarted, and the Actors directory button and PDF wizard opened successfully.
 
-Enable “Allow access to file URLs” for Chrome's ChatGPT browser extension, or upload the ZIP manually through Sqyre, then complete these checks:
+The live Jen import is awaiting browser file access: Chrome rejected selecting the local PDF through `fileChooser.setFiles` with “Not allowed.” No test actors were created by this attempt, and the world is running. Enable “Allow access to file URLs” for Chrome's ChatGPT browser extension, then complete these checks:
 
 1. Enable the module and confirm the Actors directory button and all wizard tabs render correctly.
 2. Import **[Import test] Jen**, using **0** for Folk hero. Preserve PDF Evasion **8**; confirm armor **4**, thresholds **7/14**, one shield bonus, both domain cards in the vault, and HP/Stress/Hope controls.
