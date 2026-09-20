@@ -1,0 +1,7 @@
+node_modules/
+dist/
+artifacts/
+tmp/
+*.pdf
+.env
+coverage/

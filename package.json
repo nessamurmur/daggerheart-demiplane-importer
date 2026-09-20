@@ -1,0 +1,23 @@
+{
+  "name": "daggerheart-demiplane-importer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Import Demiplane PDF character sheets into Foundryborne Daggerheart.",
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts tests/*.test.mjs",
+    "test:samples": "node --test tests/local/*.test.ts",
+    "build": "node scripts/build.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": { "pdfjs-dist": "6.3.289" },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "esbuild": "0.28.2",
+    "jszip": "3.10.2",
+    "typescript": "7.0.2"
+  }
+}

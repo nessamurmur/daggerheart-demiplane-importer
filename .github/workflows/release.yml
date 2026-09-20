@@ -1,0 +1,48 @@
+name: Publish Foundry module
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: foundry-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install pinned package manager and dependencies
+        run: |
+          npm install --global pnpm@11.19.0
+          pnpm install --frozen-lockfile
+      - name: Check types and tests
+        run: |
+          pnpm typecheck
+          pnpm test
+      - name: Build release assets
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: pnpm build
+      - name: Publish manifest and ZIP together
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          TAG=$(node -p "'v' + require('./artifacts/module.json').version")
+          ZIP=$(node -p "const m = require('./artifacts/module.json'); 'artifacts/' + m.id + '-' + m.version + '.zip'")
+          gh release create "$TAG" artifacts/module.json "$ZIP" \
+            --target "$RELEASE_COMMIT" --title "$TAG" \
+            --notes-file RELEASE_NOTES.md --latest
