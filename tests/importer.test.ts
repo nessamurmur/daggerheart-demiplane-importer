@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, sanitizeSource } from "../src/importer.ts";
+import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, reportJSON, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID, TRAITS } from "../src/types.ts";
 import { character, companionCheckboxesTaken, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
@@ -180,7 +180,7 @@ test("a declined import report fails the import, and the failure report says why
   await assert.rejects(executePlan(plan, runtime), (e: any) => {
     assert.match(e.message, /declined/);
     assert.equal(e.importReport.status, "failed"); assert.equal(e.importReport.error, e.message);
-    assert.equal(e.importReport.actorUuid, undefined); assert.deepEqual(e.importReport.verifiedStats, {});
+    assert.equal(e.importReport.actorUuid, undefined); assert.deepEqual(e.importReport.verifiedStats, []);
     return true;
   });
   assert.equal(created[0].deleted, true);
@@ -202,7 +202,7 @@ test("successful import creates classes first and reports every populated source
   const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
   const result = await executePlan(plan, runtime);
   assert.equal(operations[0], "class"); assert.equal(result.report.status, "complete");
-  assert.equal(result.report.fieldDisposition.extra, "reported");
+  assert.equal(Object.fromEntries(result.report.fieldDisposition).extra, "reported");
   assert.equal(result.actor.system.experiences.exp0.value, 0);
 });
 test("inaccessible compendiums do not prevent use of accessible content", async () => {
@@ -274,9 +274,19 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
   const { report } = await executePlan(plan, runtime);
   assert.equal(report.reviewedCharacter.name, "Reviewed name");
-  assert.equal(report.reviewedCharacter.source.fields.name, "Source name");
-  assert.equal(report.fieldDisposition.ancestry_name, "reported");
-  assert.equal(report.verifiedStats["system.armorScore.max"], 4);
+  assert.equal(Object.fromEntries(report.reviewedCharacter.source.fields).name, "Source name");
+  assert.equal(Object.fromEntries(report.fieldDisposition).ancestry_name, "reported");
+  assert.equal(Object.fromEntries(report.verifiedStats)["system.armorScore.max"], 4);
+});
+
+test("the report and source fields saved on the actor match the downloaded report key for key", async () => {
+  const c = character({ level: "1", "experience_name.0": "Scout", "experience_bonus.0": "0" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const { actor, report } = await executePlan(plan, runtime);
+  const downloaded = JSON.parse(JSON.stringify(report, null, 2));
+  assert.deepEqual(actor.flags[MODULE_ID].report, downloaded);
+  assert.deepEqual(actor.flags[MODULE_ID].sourceFields, downloaded.reviewedCharacter.source.fields);
 });
 
 /** A character whose domain cards, named "Card <index>", match compendium cards of the given levels. Other documents are added to the compendium. */
@@ -592,4 +602,15 @@ test("level 1 characters have no level-up history, even with a marked trait or e
   assert.deepEqual(plan.actorData.system.levelData.levelups, {});
   assert(!plan.issues.some(i => i.code === "level-history"));
   assert.deepEqual(plan.comparisons.map(x => [x.path, x.pdf, x.calculated]), [["system.resources.hitPoints.max", 7, 6]]);
+});
+
+test("the downloaded report parses to the report and prints each field pair on one line", async () => {
+  const c = character({ "hope.0": "Yes", notes: "a \"quoted\" note\nover two lines" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const report = makeReport(plan, "test");
+  const text = reportJSON(report);
+  assert.deepEqual(JSON.parse(text), JSON.parse(JSON.stringify(report)));
+  assert.match(text, /\["hope\.0", "Yes"\]/);
+  assert.match(text, /\["notes", "a \\"quoted\\" note\\nover two lines"\]/);
 });

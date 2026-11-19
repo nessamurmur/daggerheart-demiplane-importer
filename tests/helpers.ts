@@ -54,6 +54,15 @@ function grantedFeatures(granter: DocumentSource, documents: Record<string, Docu
   }));
 }
 
+/** Mirrors Foundry 14's expandObject, which document updates and loads apply inside every flag: each dotted key in a plain object, at any depth, becomes nested objects. Returns a copy, as Foundry stores one. */
+function expandObject(value: any): any {
+  if (Array.isArray(value)) return value.map(expandObject);
+  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return value;
+  const expanded = {};
+  for (const [k, v] of Object.entries(value)) setPath(expanded, k, expandObject(v));
+  return expanded;
+}
+
 export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   let serial = 0;
   const created: any[] = [], operations: string[] = [];
@@ -88,7 +97,7 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
         if (!allowed("preUpdateActor", actor, changes)) return undefined;
         // An update that changes nothing is skipped unless diff is false.
         if (options.diff !== false && Object.entries(data).every(([path, value]) => isDeepStrictEqual(getPath(actor, path), value))) return undefined;
-        for (const [path, value] of Object.entries(data)) setPath(actor, path, value);
+        for (const [path, value] of Object.entries(data)) setPath(actor, path, expandObject(value));
         return actor;
       };
       actor.delete = async () => {
