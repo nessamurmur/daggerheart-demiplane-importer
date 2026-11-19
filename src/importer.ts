@@ -341,8 +341,8 @@ export function makeReport(plan: ResolvedImportPlan, version: string): ImportRep
     createdAt: new Date().toISOString(), status: "complete",
     items: plan.resolutions.map(r => ({ name: r.entry.name, source: r.selected ?? null, kind: r.entry.kind })),
     comparisons: clone(plan.comparisons), issues: clone(plan.issues), levelHistory: clone(plan.levelHistory),
-    reviewedCharacter: clone(c), verifiedStats: {},
-    fieldDisposition: Object.fromEntries(Object.entries(c.source.fields).filter(([, v]) => v !== null && String(v).trim() !== "").map(([k]) => [k, c.source.handled.includes(k) && !plan.issues.some(i => i.field === k) ? "imported" : "reported"]))
+    reviewedCharacter: { ...clone(c), source: { ...clone(c.source), fields: Object.entries(c.source.fields) } }, verifiedStats: [],
+    fieldDisposition: Object.entries(c.source.fields).filter(([, v]) => v !== null && String(v).trim() !== "").map(([k]) => [k, c.source.handled.includes(k) && !plan.issues.some(i => i.field === k) ? "imported" : "reported"])
   };
 }
 
@@ -393,14 +393,14 @@ export async function executePlan(plan: ResolvedImportPlan, runtime: ImportRunti
       const expected = decision?.choice === "pdf" ? decision.pdf : calculated;
       const actual = Number(getPath(actor, path));
       if (actual !== expected) throw new Error(`${decision?.label ?? path} did not match the review: expected ${expected}, got ${actual}.`);
-      report.verifiedStats[path] = actual;
+      report.verifiedStats.push([path, actual]);
     }
     for (const [key, expected] of Object.entries(c.resources)) {
       const path = key === "armor" ? "system.armorScore.value" : `system.resources.${key}.value`;
       if (Number(getPath(actor, path)) !== expected) throw new Error(`The imported ${key} marks do not fit the reviewed character.`);
     }
     report.actorUuid = actor.uuid;
-    await actor.update({ [`flags.${MODULE_ID}.report`]: report, [`flags.${MODULE_ID}.sourceFields`]: c.source.fields });
+    await actor.update({ [`flags.${MODULE_ID}.report`]: report, [`flags.${MODULE_ID}.sourceFields`]: report.reviewedCharacter.source.fields });
     return { actor, companion, report };
   } catch (error: any) {
     report.status = "failed";

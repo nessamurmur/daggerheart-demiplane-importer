@@ -2,6 +2,8 @@ export const MODULE_ID = "daggerheart-demiplane-importer";
 export const TRAITS = ["agility", "strength", "finesse", "instinct", "presence", "knowledge"] as const;
 export type Trait = typeof TRAITS[number];
 export type Fields = Record<string, string | boolean | number | null>;
+/** PDF field names and document paths contain dots, and Foundry turns dotted keys inside flags into nested objects, so the saved report lists such maps as [key, value] pairs. */
+export type FieldPairs = [field: string, value: Fields[string]][];
 export type ItemKind = "class" | "subclass" | "ancestry" | "community" | "domainCard" | "weapon" | "armor" | "loot" | "consumable" | "feature";
 export interface Issue { code: string; message: string; field?: string; blocking?: boolean; }
 export interface Experience { name: string; value: number | null; description?: string; }
@@ -94,9 +96,9 @@ export interface ImportReport {
   items: { name: string; source: string | null; kind: string }[];
   comparisons: StatComparison[]; issues: Issue[];
   levelHistory?: LevelupHistory;
-  reviewedCharacter: ParsedCharacter;
-  verifiedStats: Record<string, number>;
-  fieldDisposition: Record<string, "imported" | "reported">;
+  reviewedCharacter: Omit<ParsedCharacter, "source"> & { source: Omit<ParsedCharacter["source"], "fields"> & { fields: FieldPairs } };
+  verifiedStats: [path: string, value: number][];
+  fieldDisposition: [field: string, disposition: "imported" | "reported"][];
   status: "complete" | "failed"; cleanupFailures?: string[];
 }
 export type DocumentSource = Record<string, any>;

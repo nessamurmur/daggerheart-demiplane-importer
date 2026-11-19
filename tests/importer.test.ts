@@ -119,7 +119,7 @@ test("successful import creates classes first and reports every populated source
   const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
   const result = await executePlan(plan, runtime);
   assert.equal(operations[0], "class"); assert.equal(result.report.status, "complete");
-  assert.equal(result.report.fieldDisposition.extra, "reported");
+  assert.equal(Object.fromEntries(result.report.fieldDisposition).extra, "reported");
   assert.equal(result.actor.system.experiences.exp0.value, 0);
 });
 test("inaccessible compendiums do not prevent use of accessible content", async () => {
@@ -191,9 +191,9 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
   const { report } = await executePlan(plan, runtime);
   assert.equal(report.reviewedCharacter.name, "Reviewed name");
-  assert.equal(report.reviewedCharacter.source.fields.name, "Source name");
-  assert.equal(report.fieldDisposition.ancestry_name, "reported");
-  assert.equal(report.verifiedStats["system.armorScore.max"], 4);
+  assert.equal(Object.fromEntries(report.reviewedCharacter.source.fields).name, "Source name");
+  assert.equal(Object.fromEntries(report.fieldDisposition).ancestry_name, "reported");
+  assert.equal(Object.fromEntries(report.verifiedStats)["system.armorScore.max"], 4);
 });
 
 test("the report and source fields saved on the actor match the downloaded report key for key", async () => {
