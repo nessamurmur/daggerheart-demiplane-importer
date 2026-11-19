@@ -316,7 +316,7 @@ function levelFourRogue() {
 }
 test("cards beyond Foundryborne's loadout limit go to the vault in creation order, and the review names them", async () => {
   const marked = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`domain_card_archived.0.${i}`, "Yes"]));
-  const { c, resolutions, runtime } = withCards({ level: "4", ...marked }, [1, 1, 1, 2, 3, 4]);
+  const { c, resolutions, runtime } = withCards({ level: "4", ...marked }, [1, 1, 1, 2, 3, 4], grantingClass);
   const vault = (plan: { itemSources: any[] }) => plan.itemSources.filter(s => s.type === "domainCard" && s.system.inVault).map(s => s.name);
   const plan = await buildPlan(c, resolutions, runtime);
   assert(!plan.issues.some(i => i.blocking));
@@ -326,6 +326,8 @@ test("cards beyond Foundryborne's loadout limit go to the vault in creation orde
   const { preview, getDocument } = runtime;
   runtime.preview = source => { const actor = preview(source); actor.system.bonuses = { maxLoadout: -1 }; return actor; };
   assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), ["Card 4", "Card 5"], "an item that lowers the limit, like Attuned armor, lowers it here too");
+  runtime.preview = source => { const actor = preview(source); actor.system.bonuses = { maxLoadout: source.items.some((i: any) => i.system?.granter) ? 1 : 0 }; return actor; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), [], "a granted feature that raises the limit counts, as Foundryborne creates grants before cards");
   runtime.preview = preview;
   runtime.getDocument = async uuid => { const d = await getDocument(uuid); return uuid.endsWith("card5") ? { ...d, toObject: () => ({ ...d.toObject(), system: { ...d.toObject().system, loadoutIgnore: true } }) } : d; };
   assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), [], "a card that ignores the limit stays in the loadout");

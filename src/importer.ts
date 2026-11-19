@@ -213,12 +213,14 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   plan.actorData = actorData;
   if (issues.some(i => i.blocking)) return plan;
   const previewActor = (items: DocumentSource[]) => runtime.preview({ ...clone(actorData), items: clone(items) });
-  const limit = runtime.maxLoadout + (previewActor(sources).system.bonuses.maxLoadout);
-  const vaulted = fitLoadout(sources, limit);
-  if (vaulted.length) issues.push({ code: "loadout-limit", message: `Foundryborne’s loadout holds ${limit} domain cards, so ${vaulted.join(", ")} ${vaulted.length === 1 ? "goes" : "go"} to the vault. To vault a different card, go back to the details and check its “In vault” box.` });
   let expanded: DocumentSource[];
   try { expanded = await expandGrants(sources, runtime); }
   catch (e) { issues.push(error((e as Error).message)); return plan; }
+  // Granted features are created before the cards, so Foundryborne's loadout check sees their bonuses too.
+  const limit = runtime.maxLoadout + (previewActor(expanded).system.bonuses.maxLoadout);
+  const vaulted = fitLoadout(sources, limit);
+  for (const card of expanded.filter(s => s.type === "domainCard")) card.system.inVault = sources.find(s => s._id === card._id)!.system.inVault;
+  if (vaulted.length) issues.push({ code: "loadout-limit", message: `Foundryborne’s loadout holds ${limit} domain cards, so ${vaulted.join(", ")} ${vaulted.length === 1 ? "goes" : "go"} to the vault. To vault a different card, go back to the details and check its “In vault” box.` });
   const baseline = previewActor(expanded);
   const { stats, notes } = statEvidence(c, baseline, previewActor(expanded.filter(s => CLASS_TYPES.includes(s.type) || CLASS_TYPES.includes(s.system.granter?.type))));
   const history = inferLevelups(levelupEvidence(c, expanded, baseline, stats, actorId));
