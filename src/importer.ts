@@ -279,9 +279,9 @@ function historyIssue(history: LevelupHistory, notes: string[], levelupAuto: boo
   return { code: "level-history", message: [
     `Level-up history recorded from the PDF. ${history.summary.map(s => `Level ${s.level}: ${s.choices.join(", ") || "no choices identified"}.`).join(" ")}`,
     ...notes,
-    history.unexplainedSlots ? `Option slots not identified from the PDF: ${history.unexplainedSlots}. Foundry’s level-up dialog leaves these open.` : "",
+    history.unexplainedSlots ? `Option slots not identified from the PDF: ${history.unexplainedSlots}. The matching tier checkboxes stay unmarked, so a later level-up can take them.` : "",
     history.unplaced.length ? `These choices from the PDF were not recorded: ${history.unplaced.join(", ")}.` : "",
-    levelupAuto ? "" : "Automatic level-up is off in Foundryborne, so the PDF’s final values are stored and the history only marks options as taken."
+    levelupAuto ? "" : "Automatic level-up is off in Foundryborne, so traits, experiences, and Proficiency keep the PDF’s final values, and the stat review decides Hit Points, Stress, and Evasion. The history only marks options as taken."
   ].filter(Boolean).join(" ") };
 }
 

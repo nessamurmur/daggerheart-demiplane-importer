@@ -241,6 +241,7 @@ test("higher-level imports record level-up history that Foundry replays to the P
   assert(actor.system.traits.strength.tierMarked && actor.system.traits.presence.tierMarked);
   assert.deepEqual(Object.values<any>(actor.system.experiences).map(e => e.value), [3, 3, 2]);
   assert.equal(report.levelHistory?.unexplainedSlots, 2);
+  assert.match(history.message, /Option slots not identified from the PDF: 2\. The matching tier checkboxes stay unmarked, so a later level-up can take them\./);
 });
 
 test("with automatic level-up off, the history is recorded and the PDF's final values are stored", async () => {
@@ -251,6 +252,7 @@ test("with automatic level-up off, the history is recorded and the PDF's final v
   const s = plan.actorData.system;
   assert.deepEqual([s.traits.strength.value, s.traits.presence.value, s.proficiency, ...Object.values<any>(s.experiences).map(e => e.value)], [0, 2, 2, 3, 3, 2]);
   assert.deepEqual(plan.comparisons.map(x => [x.path, x.pdf, x.calculated]), [["system.resources.hitPoints.max", 7, 6]]);
+  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /traits, experiences, and Proficiency keep the PDF’s final values, and the stat review decides Hit Points, Stress, and Evasion\./);
 });
 
 test("tier 3 history respects each tier's options, checkbox limits, and level slots", async () => {
