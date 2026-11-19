@@ -458,9 +458,30 @@ test("domain cards from active subclass features are neither level-up picks nor 
     assert.deepEqual(selections(plan).filter(s => s.type === "domainCard").map(s => `t${s.tier} ${s.optionKey} #${s.checkboxNr}`), extraCards, `level ${level}, ${cards.length} cards`);
     const recorded = Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => [...r.achievements.domainCards.map((x: any) => x.uuid), ...r.selections.filter((s: any) => s.type === "domainCard").map((s: any) => s.data[0])]);
     for (const name of subclassCards.split(", ").map(x => x.split(" (")[0])) assert(!recorded.includes(plan.itemSources.find(s => s.name === name)!._stats.compendiumSource), `${name} is recorded in the level-up history`);
-    assert(plan.issues.find(i => i.code === "level-history")!.message.includes(`Domain cards from subclass features, not level-up picks: ${subclassCards}.`), `level ${level}`);
+    assert(plan.issues.find(i => i.code === "level-history")!.message.includes(`Domain cards counted for subclass features, not as level-up picks (which card each feature took is a guess): ${subclassCards}.`), `level ${level}`);
     assert.deepEqual(plan.levelHistory?.unplaced, [], `level ${level}`);
   }
+});
+
+test("School of Knowledge's card features are recognized by compendium identity when their description is translated", async () => {
+  const srd = (id: string) => `Compendium.daggerheart.subclasses.Item.${id}`;
+  const translated = {
+    "Compendium.test.Item.knowledge": { name: "Fixture Path", type: "subclass", system: { featureState: 1, features: [{ type: "foundation", item: srd("YS52ZGdce605wNVT") }] } },
+    [srd("YS52ZGdce605wNVT")]: { name: "Préparé", type: "feature", system: { description: "<p>Prenez une carte de domaine supplémentaire de votre niveau ou inférieur.</p>" } }
+  };
+  const { c, resolutions, runtime } = withCards({ level: "2", subclass_name_1: "Fixture Path", subclass_class_1: "Fixture Class", subclass_foundation_1: "Yes", ...proficiency(2) }, [1, 1, 1, 1], translated);
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(selections(plan).filter(s => s.type === "domainCard"), []);
+  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /not as level-up picks .*: Card 3 \(Préparé\)\./);
+});
+
+test("an editable subclass whose PDF text grants a domain card is not read as an extra-card pick", async () => {
+  const { c, resolutions, runtime } = withCards({ level: "2", subclass_name_1: "Fixture Path", subclass_class_1: "Fixture Class", subclass_foundation_1: "Yes", subclass_feature_1: "Prepared: Take an additional domain card of your level or lower from a domain you have access to.", ...proficiency(2) }, [1, 1, 1, 1]);
+  for (const r of resolutions) if (r.entry.kind === "subclass") r.selected = null;
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert(!plan.issues.some(i => i.blocking), plan.issues.filter(i => i.blocking).map(i => i.message).join("; "));
+  assert.deepEqual(selections(plan).filter(s => s.type === "domainCard"), []);
+  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /Card 3 \(Fixture Path feature 1\)/);
 });
 
 test("domain cards beyond the starting cards, level cards, and extra-card picks are listed as not recorded", async () => {

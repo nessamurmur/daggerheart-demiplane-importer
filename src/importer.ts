@@ -17,8 +17,11 @@ export const STAT_PATHS: Record<string, [string, string]> = {
   proficiency: ["system.proficiency", "Proficiency"]
 };
 const CLASS_TYPES = ["class", "subclass"];
-/** Subclass features that grant a domain card, such as School of Knowledge's Prepared, Accomplished, and Brilliant, say so only in their description. */
-const GRANTS_DOMAIN_CARD = /take an additional domain card/i;
+/** Subclass features that grant a domain card say so only in their description. The SRD's School of Knowledge features
+ *  (Prepared, Accomplished, Brilliant) are also known by compendium identity, so a translated compendium still matches. */
+const GRANTS_DOMAIN_CARD = /take an additional domain card/gi;
+const CARD_FEATURE_SOURCES = new Set(["YS52ZGdce605wNVT", "0wCctRupJAv5hTuE", "2A0HBDxGc4gEARou"].map(id => `Compendium.daggerheart.subclasses.Item.${id}`));
+const grantsCard = (text: string) => (text.match(GRANTS_DOMAIN_CARD) ?? []).length;
 const clone = <T>(value: T): T => structuredClone(value);
 const error = (message: string): Issue => ({ code: "validation", message, blocking: true });
 const sourceOf = (document: any): DocumentSource => clone(document.toObject ? document.toObject() : document);
@@ -275,10 +278,15 @@ function levelupEvidence(c: ParsedCharacter, items: DocumentSource[], baseline: 
     stats,
     proficiency: c.stats.proficiency,
     domainCards: items.filter(s => s.flags?.[MODULE_ID]?.originalType === "domainCard").map(s => ({ name: s.name, uuid: uuid(s), itemUuid: itemUuid(s), level: s.system.level ?? s.flags[MODULE_ID].original.level ?? null })),
-    cardFeatures: items.filter(f => {
-      const granter = items.find(s => s.type === "subclass" && s._id === f.system.granter?.id), state = FEATURE_STATES.indexOf(f.system.granter?.identifier);
-      return granter && state > 0 && state <= (granter.system.featureState ?? 1) && GRANTS_DOMAIN_CARD.test(f.system.description ?? "");
-    }).map(f => f.name),
+    cardFeatures: [
+      ...items.filter(f => {
+        const granter = items.find(s => s.type === "subclass" && s._id === f.system.granter?.id), state = FEATURE_STATES.indexOf(f.system.granter?.identifier);
+        return granter && state > 0 && state <= (granter.system.featureState ?? 1) && (CARD_FEATURE_SOURCES.has(f._stats?.compendiumSource) || grantsCard(f.system.description ?? "") > 0);
+      }).map(f => f.name),
+      // An editable subclass has no linked features; its PDF feature text lists one entry per unlocked feature.
+      ...items.filter(s => s.type === "subclass" && !s.system.features?.length).flatMap(s =>
+        Array.from({ length: Math.min(grantsCard(s.system.description ?? ""), s.system.featureState ?? 1) }, (_, i) => `${s.name} feature ${i + 1}`))
+    ],
     subclasses: items.filter(s => s.type === "subclass").map(s => ({ name: s.name, uuid: itemUuid(s), featureState: s.system.featureState ?? 1, isMulticlass: !!s.system.isMulticlass })),
     multiclass: multiclass ? { name: multiclass.name, uuid: uuid(multiclass), itemUuid: itemUuid(multiclass), domain: multiclass.system.domains?.[0] ?? null, subclassUuid: multiclassSubclass ? uuid(multiclassSubclass) : null } : null
   };
@@ -288,7 +296,7 @@ function historyIssue(history: LevelupHistory, notes: string[], levelupAuto: boo
   return { code: "level-history", message: [
     `Level-up history recorded from the PDF. ${history.summary.map(s => `Level ${s.level}: ${s.choices.join(", ") || "no choices identified"}.`).join(" ")}`,
     ...notes,
-    history.subclassCards.length ? `Domain cards from subclass features, not level-up picks: ${history.subclassCards.join(", ")}.` : "",
+    history.subclassCards.length ? `Domain cards counted for subclass features, not as level-up picks (which card each feature took is a guess): ${history.subclassCards.join(", ")}.` : "",
     history.unexplainedSlots ? `Option slots not identified from the PDF: ${history.unexplainedSlots}. The matching tier checkboxes stay unmarked, so a later level-up can take them.` : "",
     history.unplaced.length ? `These choices from the PDF were not recorded: ${history.unplaced.join(", ")}.` : "",
     levelupAuto ? "" : "Automatic level-up is off in Foundryborne, so traits, experiences, and Proficiency keep the PDF’s final values, and the stat review decides Hit Points, Stress, and Evasion. The history only marks options as taken."
