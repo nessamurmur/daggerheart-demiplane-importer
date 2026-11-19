@@ -44,6 +44,21 @@ export function companionCheckboxesTaken(levelups: Record<string, any>): string[
   return Object.entries(COMPANION_OPTIONS).flatMap(([key, count]) => Array.from({ length: count }, (_, i) => i + 1).filter(n => selected[2][key]?.[n]).map(n => `${key} #${n}`));
 }
 
+function setPath(target: any, path: string, value: unknown): void {
+  const parts = path.split("."); let obj = target;
+  for (const k of parts.slice(0, -1)) obj = obj[k] ??= {};
+  obj[parts.at(-1)!] = value;
+}
+
+/** Mirrors Foundry 14's expandObject, which document updates and loads apply inside every flag: each dotted key in a plain object, at any depth, becomes nested objects. Returns a copy, as Foundry stores one. */
+function expandObject(value: any): any {
+  if (Array.isArray(value)) return value.map(expandObject);
+  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return value;
+  const expanded = {};
+  for (const [k, v] of Object.entries(value)) setPath(expanded, k, expandObject(v));
+  return expanded;
+}
+
 export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   let serial = 0;
   const created: any[] = [], operations: string[] = [];
@@ -64,11 +79,7 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
       actor.id = source._id; actor.uuid = `Actor.${source._id}`;
       actor.createEmbeddedDocuments = async (_type: string, data: any[]) => { operations.push(...data.map(d => d.type)); return data.map(d => ({ id: d._id })); };
       actor.update = async (data: any) => {
-        for (const [path, value] of Object.entries(data)) {
-          const parts = path.split("."); let obj = actor;
-          for (const k of parts.slice(0, -1)) obj = obj[k] ??= {};
-          obj[parts.at(-1)!] = value;
-        }
+        for (const [path, value] of Object.entries(data)) setPath(actor, path, expandObject(value));
       };
       actor.delete = async () => { actor.deleted = true; operations.push(`delete:${actor.type}`); };
       created.push(actor); return actor;
