@@ -138,6 +138,18 @@ test("a feature that Foundry declines while granting a class fails and rolls bac
   delete hooks.preCreateItem;
   assert.equal((await executePlan(plan, runtime)).report.status, "complete");
 });
+test("a declined community feature, linked by a bare UUID as Foundryborne communities are, fails and rolls back the import", async () => {
+  const community = {
+    "Compendium.test.Item.community": { name: "Fixture Community", type: "community", system: { features: ["Compendium.test.Item.lightfoot"] } },
+    "Compendium.test.Item.lightfoot": { name: "Lightfoot", type: "feature", system: { description: "<p>Move quietly.</p>" } }
+  };
+  const { runtime, created, hooks, plan } = await reviewedPlan(character({ community_name: "Fixture Community" }), community);
+  hooks.preCreateItem = data => data.name !== "Lightfoot";
+  await assert.rejects(executePlan(plan, runtime), /Foundry declined to add “Lightfoot”, granted by “Fixture Community”/);
+  assert.equal(created[0].deleted, true);
+  delete hooks.preCreateItem;
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
 test("a declined companion link fails the import and removes both actors", async () => {
   const c = character(); c.companion = companion();
   const { runtime, created, hooks, plan } = await reviewedPlan(c);

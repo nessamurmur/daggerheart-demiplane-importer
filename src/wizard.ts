@@ -207,7 +207,7 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
       if (error.importReport) { this.report = error.importReport; console.error(`[${MODULE_ID}] Import failed`, error.importReport); }
       console.error(`[${MODULE_ID}]`, error);
       // A wizard closed mid-action cannot show its banner.
-      if (!this.rendered) ui.notifications.error(`Demiplane import failed: ${this.error}`, { permanent: true });
+      if (!this.rendered) ui.notifications.error(`Demiplane import failed: ${this.error}${error.importReport ? " The failure report is in the browser console (F12)." : ""}`, { permanent: true });
     } finally { this.busy = ""; await this.render(); }
   }
 }

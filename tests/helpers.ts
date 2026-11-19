@@ -47,7 +47,7 @@ export function companionCheckboxesTaken(levelups: Record<string, any>): string[
 
 /** Mirrors Foundryborne's Item.prepareGrantedItems: each linked feature joins its granter's creation. */
 function grantedFeatures(granter: DocumentSource, documents: Record<string, DocumentSource>): DocumentSource[] {
-  return (granter.system?.features ?? []).map((link: any) => typeof link.item === "string" ? link.item : link.item?.uuid).filter(Boolean).map((uuid: string) => ({
+  return (granter.system?.features ?? []).map((link: any) => typeof link === "string" ? link : typeof link?.item === "string" ? link.item : link?.item?.uuid).filter(Boolean).map((uuid: string) => ({
     ...structuredClone(documents[uuid]), _id: `granted-${uuid}`,
     _stats: { compendiumSource: uuid.startsWith("Compendium.") ? uuid : null, duplicateSource: uuid.startsWith("Compendium.") ? null : uuid },
     system: { ...structuredClone(documents[uuid].system), granter: { id: granter._id, type: granter.type } }

@@ -73,7 +73,8 @@ function fallback(entry: Entry, c: ParsedCharacter, runtime: ImportRuntime, issu
   return { name: entry.name, type, system, effects: [] };
 }
 
-const linkedUuid = (link: any): string | undefined => typeof link.item === "string" ? link.item : link.item?.uuid;
+/** Feature links are { type, item } on classes, subclasses and ancestries, and bare UUID strings on communities (Foundryborne reads both: `f.item ?? f`). */
+const linkedUuid = (link: any): string | undefined => typeof link === "string" ? link : typeof link?.item === "string" ? link.item : link?.item?.uuid;
 
 async function expandGrants(sources: DocumentSource[], runtime: ImportRuntime): Promise<DocumentSource[]> {
   const expanded = clone(sources);
