@@ -27,11 +27,10 @@ test("Foundry preview uses the constructor's prepared stats without doubling cla
     prepareData() { this.preparations++; this.system.evasion += 10; this.system.resources.hitPoints.max += 6; }
   }
   try {
-    const worldTier = { tier: 2, levels: { start: 2, end: 10 }, initialAchievements: {}, availableOptions: 1, domainCardByLevel: 0, options: {} };
-    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]), settings: { get: (scope: string, key: string) => scope === "daggerheart" && key === "LevelTiers" ? { tiers: { 2: worldTier } } : undefined } };
-    (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { id: "daggerheart", SETTINGS: { gameSettings: { LevelTiers: "LevelTiers" } }, DOMAIN: { allDomains: () => ({}) } } };
+    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
+    (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { DOMAIN: { allDomains: () => ({}) } } };
     const runtime = foundryRuntime();
-    assert.deepEqual([runtime.levelTiers, runtime.levelupAuto], [[worldTier], false]);
+    assert.equal(runtime.levelupAuto, false);
     const source = { system: { evasion: 0, resources: { hitPoints: { max: 0 } } } };
     const actor = runtime.preview(source);
     assert.equal(actor.preparations, 1);
@@ -260,6 +259,35 @@ test("tier 3 history respects each tier's options, checkbox limits, and level sl
   assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 9);
   assert.equal(plan.calculatedStats["system.proficiency"], 4);
   assert.deepEqual(plan.comparisons, []);
+});
+
+test("level-up history follows the tier table of the actor's level-up dialog, including class overrides", async () => {
+  const c = character({ level: "3", "proficiency.1": "Yes", "proficiency.2": "Yes" });
+  const { runtime } = mockRuntime();
+  const preview = runtime.preview;
+  runtime.preview = source => {
+    const actor = preview(source);
+    actor.system.levelupTiers.tiers[2].options.proficiency = { type: "proficiency", checkboxSelections: 1, minCost: 1, value: 1 };
+    return actor;
+  };
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(selections(plan).filter(s => s.type === "proficiency").map(s => `t${s.tier} level ${s.level} #${s.checkboxNr}`), ["t2 level 2 #1"]);
+  assert.equal(plan.calculatedStats["system.proficiency"], 3);
+});
+
+test("each Foundry preview receives its own copy of the items, because Foundry's constructor owns its input", async () => {
+  const c = character({ armor_name: "Heavy Mail", armor_score: "4", armor_thresholds: "7/15" });
+  const { runtime } = mockRuntime();
+  const preview = runtime.preview;
+  runtime.preview = source => {
+    const actor = preview(source);
+    if (source.items.some((i: any) => i.type === "armor")) actor.system.evasion -= 1;
+    for (const item of source.items) item.type = "consumed";
+    return actor;
+  };
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.equal(plan.calculatedStats["system.evasion"], 9);
+  assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
 });
 
 test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {

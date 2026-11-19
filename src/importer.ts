@@ -1,10 +1,9 @@
-import { MODULE_ID, TRAITS, type Candidate, type DocumentSource, type Entry, type ImportReport, type Issue, type LevelTier, type LevelupHistory, type ParsedCharacter, type ResolvedImportPlan, type Resolution, type StatComparison } from "./types.ts";
+import { MODULE_ID, TRAITS, type Candidate, type DocumentSource, type Entry, type ImportReport, type Issue, type LevelupHistory, type ParsedCharacter, type ResolvedImportPlan, type Resolution, type StatComparison } from "./types.ts";
 import { escapeHTML, getPath, normalizeName, paragraphs, sourceFlags, validateCharacter } from "./core.ts";
 import { inferLevelups, type LevelupEvidence } from "./levelups.ts";
 
 export interface ImportRuntime {
-  version: string; moduleVersion: string; domains: string[]; isGM: boolean;
-  levelTiers: LevelTier[]; levelupAuto: boolean;
+  version: string; moduleVersion: string; domains: string[]; isGM: boolean; levelupAuto: boolean;
   id(): string;
   getDocument(uuid: string): Promise<any>;
   preview(source: DocumentSource): any;
@@ -205,8 +204,8 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   let expanded: DocumentSource[];
   try { expanded = await expandGrants(sources, runtime); }
   catch (e) { issues.push(error((e as Error).message)); return plan; }
-  const baseline = runtime.preview({ ...clone(actorData), items: expanded });
-  const history = inferLevelups(levelupEvidence(c, sources, baseline, runtime.levelTiers, actorId));
+  const previewActor = (items: DocumentSource[]) => runtime.preview({ ...clone(actorData), items: clone(items) });
+  const history = inferLevelups(levelupEvidence(c, sources, previewActor(expanded), actorId));
   actorData.system.levelData.levelups = history.levelups;
   if (runtime.levelupAuto) {
     for (const [trait, bonus] of Object.entries(history.bonuses.traits)) actorData.system.traits[trait].value -= bonus;
@@ -217,7 +216,7 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   actorData.flags[MODULE_ID].incompleteHistory = history.unexplainedSlots > 0 || history.unplaced.length > 0;
   plan.levelHistory = history;
   if (history.summary.length) issues.push(historyIssue(history, runtime.levelupAuto));
-  const preview = runtime.preview({ ...clone(actorData), items: expanded });
+  const preview = previewActor(expanded);
   for (const [key, [path, label]] of Object.entries(STAT_PATHS)) {
     const pdf = c.stats[key], calculated = Number(getPath(preview, path));
     if (!Number.isFinite(calculated)) { issues.push(error(`Foundry could not calculate ${label}.`)); continue; }
@@ -241,13 +240,13 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   return plan;
 }
 
-function levelupEvidence(c: ParsedCharacter, sources: DocumentSource[], baseline: any, tiers: LevelTier[], actorId: string): LevelupEvidence {
+function levelupEvidence(c: ParsedCharacter, sources: DocumentSource[], baseline: any, actorId: string): LevelupEvidence {
   const itemUuid = (s: DocumentSource) => `Actor.${actorId}.Item.${s._id}`;
   const uuid = (s: DocumentSource) => s._stats.compendiumSource || s._stats.duplicateSource || itemUuid(s);
   const gain = (key: string) => { const difference = (c.stats[key] ?? NaN) - Number(getPath(baseline, STAT_PATHS[key][0])); return difference > 0 ? difference : 0; };
   const multiclass = sources.find(s => s.type === "class" && s.system.isMulticlass), multiclassSubclass = sources.find(s => s.type === "subclass" && s.system.isMulticlass);
   return {
-    level: c.level ?? 1, tiers, markedTraits: TRAITS.filter(t => c.markedTraits[t]),
+    level: c.level ?? 1, tiers: Object.values(baseline.system.levelupTiers.tiers), markedTraits: TRAITS.filter(t => c.markedTraits[t]),
     experiences: c.experiences.map((e, i) => ({ id: `exp${i}`, name: e.name, value: e.value ?? 0 })),
     gains: { hitPoint: gain("hitPoints"), stress: gain("stress"), evasion: gain("evasion") },
     proficiency: c.stats.proficiency,
@@ -396,7 +395,6 @@ export function foundryRuntime(): ImportRuntime {
   const cache = new Map<string, any>();
   return {
     version: game.system.version, moduleVersion: game.modules.get(MODULE_ID).version, domains: Object.keys(CONFIG.DH.DOMAIN.allDomains()), isGM: game.user.isGM,
-    levelTiers: Object.values(game.settings.get(CONFIG.DH.id, CONFIG.DH.SETTINGS.gameSettings.LevelTiers).tiers),
     levelupAuto: !!game.system.settings.automation.levelupAuto,
     id: () => foundry.utils.randomID(),
     getDocument: async uuid => { if (!cache.has(uuid)) cache.set(uuid, await fromUuid(uuid)); return cache.get(uuid); },

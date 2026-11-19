@@ -14,9 +14,9 @@ const tier = (tier: number, start: number, end: number, options: Record<string, 
 export const LEVEL_TIERS = [tier(2, 2, 4, tier2Options), tier(3, 5, 7, upperOptions), tier(4, 8, 10, upperOptions)];
 
 /** Mirrors Foundryborne's character prepareBaseData, which replays level-up history only when automatic level-up is on. */
-function applyLevelups(system: any, runtime: ImportRuntime): void {
+function applyLevelups(system: any): void {
   const level = system.levelData.level.current;
-  const currentTier = runtime.levelTiers.find(t => level >= t.levels.start && level <= t.levels.end)?.tier;
+  const currentTier = LEVEL_TIERS.find(t => level >= t.levels.start && level <= t.levels.end)?.tier;
   for (const record of Object.values<any>(system.levelData.levelups)) {
     system.proficiency += record.achievements.proficiency;
     for (const s of record.selections) {
@@ -35,13 +35,14 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   const created: any[] = [], operations: string[] = [];
   const runtime: ImportRuntime = {
     version: "2.10.2", moduleVersion: "test", domains: ["sage", "arcana"], isGM: true,
-    levelTiers: LEVEL_TIERS, levelupAuto: true,
+    levelupAuto: true,
     id: () => String(++serial).padStart(16, "0"), localize: key => key,
     getDocument: async uuid => documents[uuid] ? { ...documents[uuid], toObject: () => structuredClone(documents[uuid]) } : null,
     // A deterministic stub isolates planning/transaction tests. Live Foundry verifies actual preparation.
     preview: source => {
       const system = { ...structuredClone(source.system), evasion: 10, armorScore: { max: 4, value: 0 }, damageThresholds: { major: 7, severe: 14 }, resources: { hitPoints: { max: 6, value: 0 }, stress: { max: 6, value: 0 }, hope: { max: 6, value: 2 } } };
-      if (source.type === "character" && runtime.levelupAuto) applyLevelups(system, runtime);
+      system.levelupTiers = { tiers: Object.fromEntries(structuredClone(LEVEL_TIERS).map(t => [t.tier, t])) };
+      if (source.type === "character" && runtime.levelupAuto) applyLevelups(system);
       return { ...source, system };
     },
     createActor: async source => {
