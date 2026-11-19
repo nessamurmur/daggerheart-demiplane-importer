@@ -223,6 +223,7 @@ test("higher-level imports record level-up history that Foundry replays to the P
   assert.equal(plan.calculatedStats["system.proficiency"], 2);
   const history = plan.issues.find(i => i.code === "level-history");
   assert(history && !history.blocking);
+  assert.match(history.message, /Level 2: new experience Tech Savvy \(\+2\), \+1 to strength and presence, \+1 Hit Point \(PDF 7 vs Foundry 6\)\./);
   plan.reviewed = true;
   const { actor, report } = await executePlan(plan, runtime);
   assert.deepEqual(TRAITS.map(t => actor.system.traits[t].value), [2, 0, 3, 1, 2, 1]);
@@ -288,6 +289,22 @@ test("each Foundry preview receives its own copy of the items, because Foundry's
   const plan = await buildPlan(c, resolveEntries(c, []), runtime);
   assert.equal(plan.calculatedStats["system.evasion"], 9);
   assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
+});
+
+test("no Hit Point, Stress, or Evasion picks are inferred for a stat that other items change in Foundry", async () => {
+  const c = character({ level: "3", evasion: "10", hp_max: "7", "proficiency.1": "Yes", armor_name: "Heavy Mail", armor_score: "4", armor_thresholds: "7/15" });
+  const { runtime } = mockRuntime();
+  const preview = runtime.preview;
+  runtime.preview = source => {
+    const actor = preview(source);
+    if (source.items?.some((i: any) => i.type === "armor")) actor.system.evasion -= 1;
+    return actor;
+  };
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(selections(plan).map(s => s.type), ["hitPoint"]);
+  assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 7);
+  assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
+  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /Evasion: other items change it in Foundry \(class 10, with items 9\)/);
 });
 
 test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {

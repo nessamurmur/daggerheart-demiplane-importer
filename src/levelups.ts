@@ -1,10 +1,11 @@
 import type { LevelTier, LevelupHistory, LevelupRecord, Trait } from "./types.ts";
 
-/** What a PDF shows about earlier level-ups. Gains are PDF values above Foundry's calculation without level-up history. */
+/** What a PDF shows about earlier level-ups. */
 export interface LevelupEvidence {
   level: number; tiers: LevelTier[]; markedTraits: Trait[];
   experiences: { id: string; name: string; value: number }[];
-  gains: { hitPoint: number; stress: number; evasion: number };
+  /** Each stat whose level-up gains are the PDF value above Foundry's calculation without level-up history. */
+  stats: Partial<Record<StatPick, { pdf: number; foundry: number }>>;
   proficiency: number | null;
   domainCards: { name: string; uuid: string; itemUuid: string; level: number | null }[];
   subclasses: { name: string; uuid: string; featureState: number; isMulticlass: boolean }[];
@@ -15,6 +16,9 @@ interface Pick {
   minLevel: number; tier?: number; cardLevel?: number;
 }
 
+/** Level-up options that raise a character stat: option type, label, and the stat key. */
+export const STAT_PICKS = [["hitPoint", "Hit Point", "hitPoints"], ["stress", "Stress", "stress"], ["evasion", "Evasion", "evasion"]] as const;
+type StatPick = typeof STAT_PICKS[number][0];
 const STARTING_PROFICIENCY = 1, STARTING_EXPERIENCE = 2, STARTING_DOMAIN_CARDS = 2;
 const FEATURE_STATES = ["", "foundation", "specialization", "mastery"];
 /** Foundryborne's level-up dialog disables one of these options in a tier that holds the other. */
@@ -50,8 +54,10 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
     const traits = e.markedTraits.slice(i, i + traitAmount);
     picks.push({ type: "trait", label: `+1 to ${traits.join(" and ")}`, data: traits, minLevel: 2, tier: current?.tier ?? 0 });
   }
-  repeat(e.gains.hitPoint, { type: "hitPoint", label: "+1 Hit Point", data: [], minLevel: 2 });
-  repeat(e.gains.stress, { type: "stress", label: "+1 Stress", data: [], minLevel: 2 });
+  for (const [type, name] of STAT_PICKS) {
+    const stat = e.stats[type];
+    if (stat) repeat(stat.pdf - stat.foundry, { type, label: `+1 ${name} (PDF ${stat.pdf} vs Foundry ${stat.foundry})`, data: [], minLevel: 2 });
+  }
   const raises = experiences.filter(x => x.gainedAt !== null).map(x => ({ ...x, extra: Math.max(0, x.value - x.base) }));
   for (;;) {
     const [a, b] = raises.filter(x => x.extra > 0).sort((x, y) => y.extra - x.extra);
@@ -73,7 +79,6 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
       picks.push({ type: "domainCard", label: `extra domain card ${card.name}`, data: [card.uuid], itemUuid: card.itemUuid, minLevel: Math.max(2, card.level ?? 2), cardLevel: card.level ?? undefined });
     }
   }
-  repeat(e.gains.evasion, { type: "evasion", label: "+1 Evasion", data: [], minLevel: 2 });
   if (e.multiclass) {
     const m = e.multiclass, secondaryData: Record<string, string> = {};
     if (m.domain) secondaryData.domain = m.domain;

@@ -1,6 +1,6 @@
 import { MODULE_ID, TRAITS, type Candidate, type DocumentSource, type Entry, type ImportReport, type Issue, type LevelupHistory, type ParsedCharacter, type ResolvedImportPlan, type Resolution, type StatComparison } from "./types.ts";
 import { escapeHTML, getPath, normalizeName, paragraphs, sourceFlags, validateCharacter } from "./core.ts";
-import { inferLevelups, type LevelupEvidence } from "./levelups.ts";
+import { inferLevelups, STAT_PICKS, type LevelupEvidence } from "./levelups.ts";
 
 export interface ImportRuntime {
   version: string; moduleVersion: string; domains: string[]; isGM: boolean; levelupAuto: boolean;
@@ -16,6 +16,7 @@ export const STAT_PATHS: Record<string, [string, string]> = {
   hitPoints: ["system.resources.hitPoints.max", "Maximum HP"], stress: ["system.resources.stress.max", "Maximum Stress"],
   proficiency: ["system.proficiency", "Proficiency"]
 };
+const CLASS_TYPES = ["class", "subclass"];
 const clone = <T>(value: T): T => structuredClone(value);
 const error = (message: string): Issue => ({ code: "validation", message, blocking: true });
 const sourceOf = (document: any): DocumentSource => clone(document.toObject ? document.toObject() : document);
@@ -205,7 +206,9 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   try { expanded = await expandGrants(sources, runtime); }
   catch (e) { issues.push(error((e as Error).message)); return plan; }
   const previewActor = (items: DocumentSource[]) => runtime.preview({ ...clone(actorData), items: clone(items) });
-  const history = inferLevelups(levelupEvidence(c, sources, previewActor(expanded), actorId));
+  const baseline = previewActor(expanded);
+  const { stats, notes } = statEvidence(c, baseline, previewActor(expanded.filter(s => CLASS_TYPES.includes(s.type) || CLASS_TYPES.includes(s.system.granter?.type))));
+  const history = inferLevelups(levelupEvidence(c, sources, baseline, stats, actorId));
   actorData.system.levelData.levelups = history.levelups;
   if (runtime.levelupAuto) {
     for (const [trait, bonus] of Object.entries(history.bonuses.traits)) actorData.system.traits[trait].value -= bonus;
@@ -215,7 +218,7 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   for (const id of Object.values(history.levelups).flatMap(r => Object.keys(r.achievements.experiences))) actorData.system.experiences[id].core = true;
   actorData.flags[MODULE_ID].incompleteHistory = history.unexplainedSlots > 0 || history.unplaced.length > 0;
   plan.levelHistory = history;
-  if (history.summary.length) issues.push(historyIssue(history, runtime.levelupAuto));
+  if (history.summary.length) issues.push(historyIssue(history, notes, runtime.levelupAuto));
   const preview = previewActor(expanded);
   for (const [key, [path, label]] of Object.entries(STAT_PATHS)) {
     const pdf = c.stats[key], calculated = Number(getPath(preview, path));
@@ -240,15 +243,27 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   return plan;
 }
 
-function levelupEvidence(c: ParsedCharacter, sources: DocumentSource[], baseline: any, actorId: string): LevelupEvidence {
+/** A level-up gain is the PDF value above Foundry's calculation, unless items other than the class change the stat in Foundry, where the PDF may count them differently. */
+function statEvidence(c: ParsedCharacter, baseline: any, classBaseline: any): { stats: LevelupEvidence["stats"]; notes: string[] } {
+  const stats: LevelupEvidence["stats"] = {}, notes: string[] = [];
+  for (const [type, , key] of STAT_PICKS) {
+    const [path, label] = STAT_PATHS[key], pdf = c.stats[key];
+    const foundry = Number(getPath(baseline, path)), classOnly = Number(getPath(classBaseline, path));
+    if (pdf == null) continue;
+    if (foundry === classOnly) stats[type] = { pdf, foundry };
+    else if (pdf !== foundry) notes.push(`${label}: other items change it in Foundry (class ${classOnly}, with items ${foundry}), so its level-up picks were not inferred. Review the comparison.`);
+  }
+  return { stats, notes };
+}
+
+function levelupEvidence(c: ParsedCharacter, sources: DocumentSource[], baseline: any, stats: LevelupEvidence["stats"], actorId: string): LevelupEvidence {
   const itemUuid = (s: DocumentSource) => `Actor.${actorId}.Item.${s._id}`;
   const uuid = (s: DocumentSource) => s._stats.compendiumSource || s._stats.duplicateSource || itemUuid(s);
-  const gain = (key: string) => { const difference = (c.stats[key] ?? NaN) - Number(getPath(baseline, STAT_PATHS[key][0])); return difference > 0 ? difference : 0; };
   const multiclass = sources.find(s => s.type === "class" && s.system.isMulticlass), multiclassSubclass = sources.find(s => s.type === "subclass" && s.system.isMulticlass);
   return {
     level: c.level ?? 1, tiers: Object.values(baseline.system.levelupTiers.tiers), markedTraits: TRAITS.filter(t => c.markedTraits[t]),
     experiences: c.experiences.map((e, i) => ({ id: `exp${i}`, name: e.name, value: e.value ?? 0 })),
-    gains: { hitPoint: gain("hitPoints"), stress: gain("stress"), evasion: gain("evasion") },
+    stats,
     proficiency: c.stats.proficiency,
     domainCards: sources.filter(s => s.flags?.[MODULE_ID]?.originalType === "domainCard").map(s => ({ name: s.name, uuid: uuid(s), itemUuid: itemUuid(s), level: s.system.level ?? s.flags[MODULE_ID].original.level ?? null })),
     subclasses: sources.filter(s => s.type === "subclass").map(s => ({ name: s.name, uuid: itemUuid(s), featureState: s.system.featureState ?? 1, isMulticlass: !!s.system.isMulticlass })),
@@ -256,9 +271,10 @@ function levelupEvidence(c: ParsedCharacter, sources: DocumentSource[], baseline
   };
 }
 
-function historyIssue(history: LevelupHistory, levelupAuto: boolean): Issue {
+function historyIssue(history: LevelupHistory, notes: string[], levelupAuto: boolean): Issue {
   return { code: "level-history", message: [
     `Level-up history recorded from the PDF. ${history.summary.map(s => `Level ${s.level}: ${s.choices.join(", ") || "no choices identified"}.`).join(" ")}`,
+    ...notes,
     history.unexplainedSlots ? `Option slots not identified from the PDF: ${history.unexplainedSlots}. Foundry’s level-up dialog leaves these open.` : "",
     history.unplaced.length ? `These choices do not fit the level tiers and were not recorded: ${history.unplaced.join(", ")}.` : "",
     levelupAuto ? "" : "Automatic level-up is off in Foundryborne, so the PDF’s final values are stored and the history only marks options as taken."
