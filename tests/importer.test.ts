@@ -335,6 +335,23 @@ test("stat picks count only the PDF value above Foundry's calculation, including
   assert.match(plan.issues.find(i => i.code === "level-history")!.message, /Maximum HP: Foundry’s 7 includes \+1 from items other than the class; the PDF’s higher 8 was read as level-up picks/);
 });
 
+test("an item penalty is named with its sign when the PDF's stat is above Foundry's", async () => {
+  const c = character({ level: "3", evasion: "10", "proficiency.1": "Yes", armor_name: "Heavy Mail", armor_score: "4", armor_thresholds: "7/15" });
+  const { runtime } = mockRuntime();
+  const preview = runtime.preview;
+  runtime.preview = source => {
+    const actor = preview(source);
+    if (source.items?.some((i: any) => i.type === "armor")) actor.system.evasion -= 1;
+    return actor;
+  };
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(selections(plan).map(s => s.type), ["evasion"]);
+  assert.equal(plan.calculatedStats["system.evasion"], 10);
+  const message = plan.issues.find(i => i.code === "level-history")!.message;
+  assert.match(message, /Level 2: [^.]*\+1 Evasion \(PDF 10 vs Foundry 9\)\./);
+  assert.match(message, /Evasion: Foundry’s 9 includes -1 from items other than the class; the PDF’s higher 10 was read as level-up picks\./);
+});
+
 test("two-slot picks are placed before one-slot picks fill the levels they need", async () => {
   for (const [level, profs, cards, expected] of [
     ["6", 4, [1, 1, 2, 3, 4, 5, 6, 6], { 5: ["t3 proficiency #1"], 6: ["t3 domainCard #1", "t3 trait #1 agility+strength"] }],
