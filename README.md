@@ -40,7 +40,7 @@ When Foundryborne's automatic level-up setting is disabled, its own multiclass d
 
 The PDF may omit companion details. Enable the companion editor and enter its current statistics, attack, experiences, and one training choice for each previous level. This records past training so it is not offered again. The companion is created as a separate actor linked in both directions.
 
-Higher-level character imports are snapshots, not reconstructions of their entire advancement history. Current stats, features, marked traits, and level are imported; earlier character level-up choices that are absent from the PDF remain unknown. Do not use Foundry's rollback to reconstruct levels before the imported snapshot. Companion training is collected explicitly because it affects available future choices.
+Characters above level 1 are imported with a level-up history inferred from the PDF. The history includes the new experience and Proficiency gained at levels 2, 5, and 8, and the options that the PDF shows: marked traits, extra Hit Points, Stress, and Evasion, raised experiences, extra domain cards, subclass upgrades, extra Proficiency, and multiclassing. Foundryborne's level-up dialog marks these options as taken. With automatic level-up on, Foundryborne calculates the affected stats from this history. With it off, the importer stores the PDF's final values. The PDF does not show every choice, such as trait increases from an earlier tier. Option slots that the importer cannot identify stay open in the level-up dialog, and the import summary lists them. Do not use Foundry's rollback to go below the imported level. Companion training is collected explicitly because it affects available future choices.
 
 ## Privacy
 

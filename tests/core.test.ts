@@ -27,7 +27,6 @@ test("consolidates repeated subclass tiers while preserving a separate multiclas
   assert.equal(c.entries.filter(e => e.kind === "subclass").length, 2);
   assert.equal(c.entries.find(e => e.name === "Fixture Path")!.featureState, 2);
   assert.equal(c.entries.find(e => e.name === "Another Class")!.isMulticlass, true);
-  assert(c.issues.some(i => i.code === "snapshot"));
 });
 test("requires missing experience bonuses and essential character values", () => {
   const c = character({ level: "", "experience_name.0": "Storyteller", "experience_bonus.0": "" });

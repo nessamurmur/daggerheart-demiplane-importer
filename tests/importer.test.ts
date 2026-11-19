@@ -27,10 +27,13 @@ test("Foundry preview uses the constructor's prepared stats without doubling cla
     prepareData() { this.preparations++; this.system.evasion += 10; this.system.resources.hitPoints.max += 6; }
   }
   try {
-    (globalThis as any).game = { system: { version: "2.10.2" }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
-    (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { DOMAIN: { allDomains: () => ({}) } } };
+    const worldTier = { tier: 2, levels: { start: 2, end: 10 }, initialAchievements: {}, availableOptions: 1, domainCardByLevel: 0, options: {} };
+    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]), settings: { get: (scope: string, key: string) => scope === "daggerheart" && key === "LevelTiers" ? { tiers: { 2: worldTier } } : undefined } };
+    (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { id: "daggerheart", SETTINGS: { gameSettings: { LevelTiers: "LevelTiers" } }, DOMAIN: { allDomains: () => ({}) } } };
+    const runtime = foundryRuntime();
+    assert.deepEqual([runtime.levelTiers, runtime.levelupAuto], [[worldTier], false]);
     const source = { system: { evasion: 0, resources: { hitPoints: { max: 0 } } } };
-    const actor = foundryRuntime().preview(source);
+    const actor = runtime.preview(source);
     assert.equal(actor.preparations, 1);
     assert.equal(actor.system.evasion, 10); assert.equal(actor.system.resources.hitPoints.max, 6);
     assert.equal(source.system.evasion, 0);
