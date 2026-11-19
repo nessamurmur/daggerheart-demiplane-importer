@@ -346,6 +346,29 @@ test("a multiclass and a subclass upgrade are recorded in different tiers", asyn
   assert.deepEqual(plan.levelHistory?.unplaced, []);
 });
 
+test("a PDF Proficiency below the level's minimum is reported and never stored as a base below 1", async () => {
+  const c = character({ level: "3" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.equal(plan.actorData.system.proficiency, 1);
+  assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Proficiency", 1, 2]]);
+  const issue = plan.issues.find(i => i.code === "proficiency-below-minimum");
+  assert(issue && !issue.blocking);
+  assert.match(issue.message, /minimum of 2 for level 3/);
+});
+
+test("with no Proficiency marked above level 1, the tier achievements are recorded and Foundry's result is proposed", async () => {
+  const c = character({ level: "5", "proficiency.0": "" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const levelups = plan.actorData.system.levelData.levelups;
+  assert.deepEqual([levelups[2].achievements.proficiency, levelups[5].achievements.proficiency], [1, 1]);
+  assert.deepEqual(selections(plan).filter(s => s.type === "proficiency"), []);
+  assert.equal(plan.calculatedStats["system.proficiency"], 3);
+  assert.match(plan.issues.find(i => i.code === "default-proficiency")!.message, /Proficiency of 3 is proposed/);
+  assert(!plan.issues.some(i => i.code === "proficiency-below-minimum"));
+});
+
 test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {
   const c = character({ hp_max: "7", agility_marked: "Yes" });
   const { runtime } = mockRuntime();

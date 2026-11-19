@@ -1,6 +1,6 @@
 import { MODULE_ID, TRAITS, type Candidate, type DocumentSource, type Entry, type ImportReport, type Issue, type LevelupHistory, type ParsedCharacter, type ResolvedImportPlan, type Resolution, type StatComparison } from "./types.ts";
 import { escapeHTML, getPath, normalizeName, paragraphs, sourceFlags, validateCharacter } from "./core.ts";
-import { inferLevelups, STAT_PICKS, type LevelupEvidence } from "./levelups.ts";
+import { inferLevelups, STARTING_PROFICIENCY, STAT_PICKS, type LevelupEvidence } from "./levelups.ts";
 
 export interface ImportRuntime {
   version: string; moduleVersion: string; domains: string[]; isGM: boolean; levelupAuto: boolean;
@@ -213,7 +213,11 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   if (runtime.levelupAuto) {
     for (const [trait, bonus] of Object.entries(history.bonuses.traits)) actorData.system.traits[trait].value -= bonus;
     for (const [id, bonus] of Object.entries(history.bonuses.experiences)) actorData.system.experiences[id].value -= bonus;
-    if (c.stats.proficiency !== null) actorData.system.proficiency -= history.bonuses.proficiency;
+  }
+  if (c.stats.proficiency !== null) {
+    const base = c.stats.proficiency - history.bonuses.proficiency;
+    if (runtime.levelupAuto) actorData.system.proficiency = Math.max(STARTING_PROFICIENCY, base);
+    if (base < STARTING_PROFICIENCY) issues.push({ code: "proficiency-below-minimum", message: `The PDF shows Proficiency ${c.stats.proficiency}, below the minimum of ${STARTING_PROFICIENCY + history.bonuses.proficiency} for level ${c.level}. Check the PDF’s Proficiency marks.` });
   }
   for (const id of Object.values(history.levelups).flatMap(r => Object.keys(r.achievements.experiences))) actorData.system.experiences[id].core = true;
   actorData.flags[MODULE_ID].incompleteHistory = history.unexplainedSlots > 0 || history.unplaced.length > 0;

@@ -19,7 +19,8 @@ interface Pick {
 /** Level-up options that raise a character stat: option type, label, and the stat key. */
 export const STAT_PICKS = [["hitPoint", "Hit Point", "hitPoints"], ["stress", "Stress", "stress"], ["evasion", "Evasion", "evasion"]] as const;
 type StatPick = typeof STAT_PICKS[number][0];
-const STARTING_PROFICIENCY = 1, STARTING_EXPERIENCE = 2, STARTING_DOMAIN_CARDS = 2;
+export const STARTING_PROFICIENCY = 1;
+const STARTING_EXPERIENCE = 2, STARTING_DOMAIN_CARDS = 2;
 const FEATURE_STATES = ["", "foundation", "specialization", "mastery"];
 /** Foundryborne's level-up dialog disables one of these options in a tier that holds the other. */
 const EXCLUSIVE: Record<string, string> = { subclass: "multiclass", multiclass: "subclass" };
