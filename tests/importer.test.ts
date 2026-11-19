@@ -188,14 +188,10 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   assert.equal(report.verifiedStats["system.armorScore.max"], 4);
 });
 
-function levelFourRogue() {
-  const fields: Record<string, string> = {
-    level: "4", agility: "2", strength: "0", finesse: "3", instinct: "1", presence: "2", knowledge: "1", strength_marked: "Yes", presence_marked: "Yes",
-    hp_max: "7", stress_max: "6", evasion: "10", "proficiency.1": "Yes",
-    "experience_name.0": "Silver Tongued", "experience_bonus.0": "3", "experience_name.1": "Quick Hands", "experience_bonus.1": "3", "experience_name.2": "Tech Savvy", "experience_bonus.2": "2"
-  };
+/** A character whose domain cards, named "Card <index>", match compendium cards of the given levels. */
+function withCards(fields: Record<string, string>, cardLevels: number[]) {
   const documents: Record<string, any> = {}, candidates: any[] = [];
-  [1, 1, 1, 2, 3, 4].forEach((level, i) => {
+  cardLevels.forEach((level, i) => {
     const uuid = `Compendium.test.Item.card${i}`, name = `Card ${i}`;
     fields[`domain_card_name.0.${i}`] = name; fields[`domain_card_domain.0.${i}`] = "sage";
     documents[uuid] = { name, type: "domainCard", system: { domain: "sage", level, type: "ability", recallCost: 0, inVault: true } };
@@ -203,6 +199,14 @@ function levelFourRogue() {
   });
   const c = character(fields);
   return { c, resolutions: resolveEntries(c, candidates), ...mockRuntime(documents) };
+}
+const proficiency = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`proficiency.${i}`, "Yes"]));
+function levelFourRogue() {
+  return withCards({
+    level: "4", agility: "2", strength: "0", finesse: "3", instinct: "1", presence: "2", knowledge: "1", strength_marked: "Yes", presence_marked: "Yes",
+    hp_max: "7", stress_max: "6", evasion: "10", "proficiency.1": "Yes",
+    "experience_name.0": "Silver Tongued", "experience_bonus.0": "3", "experience_name.1": "Quick Hands", "experience_bonus.1": "3", "experience_name.2": "Tech Savvy", "experience_bonus.2": "2"
+  }, [1, 1, 1, 2, 3, 4]);
 }
 const levelFourTaken = { 2: ["t2 hitPoint #1", "t2 trait #1 strength+presence"], 3: ["t2 domainCard #1", "t2 experience #1 exp0+exp1"], 4: [] };
 
@@ -305,6 +309,41 @@ test("no Hit Point, Stress, or Evasion picks are inferred for a stat that other 
   assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 7);
   assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
   assert.match(plan.issues.find(i => i.code === "level-history")!.message, /Evasion: other items change it in Foundry \(class 10, with items 9\)/);
+});
+
+test("two-slot picks are placed before one-slot picks fill the levels they need", async () => {
+  for (const [level, profs, cards, expected] of [
+    ["6", 4, [1, 1, 2, 3, 4, 5, 6, 6], { 5: ["t3 proficiency #1"], 6: ["t3 domainCard #1", "t3 trait #1 agility+strength"] }],
+    ["9", 6, [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9], { 5: ["t3 proficiency #1"], 8: ["t4 proficiency #1"], 9: ["t4 domainCard #1", "t4 trait #1 agility+strength"] }]
+  ] as const) {
+    const { c, resolutions, runtime } = withCards({ level, agility_marked: "Yes", strength_marked: "Yes", ...proficiency(profs) }, [...cards]);
+    const plan = await buildPlan(c, resolutions, runtime);
+    assert.deepEqual(Object.fromEntries(Object.entries(taken(plan)).filter(([, choices]) => choices.length)), expected, `level ${level}`);
+    assert.deepEqual(plan.levelHistory?.unplaced, [], `level ${level}`);
+    assert.equal(plan.calculatedStats["system.proficiency"], profs, `level ${level}`);
+  }
+});
+
+test("marked traits are recorded in the current tier, so Foundry keeps them marked", async () => {
+  const c = character({ level: "5", agility: "2", strength: "1", agility_marked: "Yes", strength_marked: "Yes", ...proficiency(3) });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(taken(plan)[5], ["t3 trait #1 agility+strength"]);
+  plan.reviewed = true;
+  const { actor } = await executePlan(plan, runtime);
+  assert.deepEqual([actor.system.traits.agility, actor.system.traits.strength].map(t => [t.value, t.tierMarked]), [[2, true], [1, true]]);
+});
+
+test("a multiclass and a subclass upgrade are recorded in different tiers", async () => {
+  const c = character({ level: "8", ...proficiency(4), subclass_name_1: "First Path", subclass_class_1: "Fixture Class", subclass_specialization_1: "Yes", subclass_name_2: "Other Path", subclass_class_2: "Other Class" });
+  c.entries.find(e => e.name === "Other Class")!.domains = ["sage"];
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const tierOf = (type: string) => selections(plan).filter(s => s.type === type).map(s => s.tier);
+  const [multiclass, subclass] = [tierOf("multiclass"), tierOf("subclass")];
+  assert.deepEqual([multiclass.length, subclass.length], [1, 1]);
+  assert.notEqual(multiclass[0], subclass[0]);
+  assert.deepEqual(plan.levelHistory?.unplaced, []);
 });
 
 test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {

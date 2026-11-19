@@ -120,7 +120,9 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
     return false;
   };
   const unplaced: string[] = [];
-  for (const p of picks.sort((a, b) => allowed(a).length - allowed(b).length)) if (!place(p)) unplaced.push(p.label);
+  const cost = (p: Pick) => Math.max(0, ...allowed(p).flatMap(t => Object.values(t.options)).filter(o => o.type === p.type).map(o => o.minCost));
+  // Costly picks go first: one-slot picks spread over the levels would leave no level with two free slots.
+  for (const p of picks.sort((a, b) => cost(b) - cost(a) || allowed(a).length - allowed(b).length)) if (!place(p)) unplaced.push(p.label);
 
   for (const record of Object.values(levelups)) {
     bonuses.proficiency += record.achievements.proficiency;
