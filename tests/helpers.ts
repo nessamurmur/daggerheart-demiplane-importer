@@ -49,7 +49,7 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   const created: any[] = [], operations: string[] = [];
   const runtime: ImportRuntime = {
     version: "2.10.2", moduleVersion: "test", domains: ["sage", "arcana"], isGM: true,
-    levelupAuto: true,
+    levelupAuto: true, maxLoadout: 5,
     id: () => String(++serial).padStart(16, "0"), localize: key => key,
     getDocument: async uuid => documents[uuid] ? { ...documents[uuid], toObject: () => structuredClone(documents[uuid]) } : null,
     // A deterministic stub isolates planning/transaction tests. Live Foundry verifies actual preparation.

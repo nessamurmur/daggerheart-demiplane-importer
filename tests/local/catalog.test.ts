@@ -38,7 +38,7 @@ test("private PDFs resolve against an unmodified Foundryborne 2.10.2 source cata
   runtime.domains = ["arcana", "blade", "bone", "codex", "grace", "midnight", "sage", "splendor", "valor"];
   const plan = await buildPlan(jen, resolutions, runtime);
   assert.deepEqual(plan.issues.filter(i => i.blocking), []);
-  assert(plan.itemSources.filter(s => s.type === "domainCard").every(s => s.system.inVault));
+  assert(plan.itemSources.filter(s => s.type === "domainCard").every(s => !s.system.inVault));
   const shield = plan.itemSources.find(s => s.name === "Round Shield")!;
   const armor = plan.itemSources.find(s => s.type === "armor")!;
   assert.equal(armor.system.armor.max, 3);
