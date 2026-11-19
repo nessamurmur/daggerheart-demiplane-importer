@@ -30,6 +30,20 @@ function applyLevelups(system: any): void {
   }
 }
 
+/** Foundryborne 2.10.2's companion level-up options and their checkbox counts, from its defaultCompanionTier, whose one tier has key 2. */
+const COMPANION_OPTIONS = { experience: 3, hope: 1, creatureComfort: 1, armored: 1, vicious: 3, stress: 3, bonded: 1, evasion: 3 };
+
+/** Mirrors DhCompanionLevelup#tiersForRendering: the checkboxes the companion level-up dialog shows as taken. Like Foundryborne, it throws for a selection in an unknown tier. */
+export function companionCheckboxesTaken(levelups: Record<string, any>): string[] {
+  const selected: Record<string, Record<string, Record<string, unknown>>> = { 2: {} };
+  for (const record of Object.values(levelups)) for (const s of record.selections) {
+    const tier = selected[s.tier];
+    tier[s.optionKey] ??= {};
+    tier[s.optionKey][s.checkboxNr] = s;
+  }
+  return Object.entries(COMPANION_OPTIONS).flatMap(([key, count]) => Array.from({ length: count }, (_, i) => i + 1).filter(n => selected[2][key]?.[n]).map(n => `${key} #${n}`));
+}
+
 export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   let serial = 0;
   const created: any[] = [], operations: string[] = [];

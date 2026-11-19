@@ -301,7 +301,8 @@ function companionSource(c: ParsedCharacter, runtime: ImportRuntime, partnerId: 
   const dice = ["d4", "d6", "d8", "d10", "d12", "d20"], ranges = ["melee", "veryClose", "close", "far", "veryFar"];
   const damageSteps = p.training.filter(t => t.type === "vicious" && t.data[0] === "damage").length;
   const rangeSteps = p.training.filter(t => t.type === "vicious" && t.data[0] === "range").length;
-  const levelups = Object.fromEntries(p.training.map((t, i) => [String(i + 2), { achievements: { experiences: {}, domainCards: [], proficiency: 0 }, selections: [{ ...t, tier: 1, level: i + 2, optionKey: t.type, checkboxNr: p.training.slice(0, i).filter(x => x.type === t.type).length, value: t.type === "evasion" ? 2 : 1, data: t.data, features: [] }] }]));
+  // Foundryborne's companion level-up dialog has one tier, keyed 2, and numbers its checkboxes from 1.
+  const levelups = Object.fromEntries(p.training.map((t, i) => [String(i + 2), { achievements: { experiences: {}, domainCards: [], proficiency: 0 }, selections: [{ ...t, tier: 2, level: i + 2, optionKey: t.type, checkboxNr: p.training.slice(0, i).filter(x => x.type === t.type).length + 1, value: t.type === "evasion" ? 2 : 1, data: t.data, features: [] }] }]));
   return {
     _id: runtime.id(), name: p.name, type: "companion",
     system: {

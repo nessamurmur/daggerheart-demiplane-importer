@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID, TRAITS } from "../src/types.ts";
-import { character, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
+import { character, companionCheckboxesTaken, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
 
 const selections = (plan: { actorData: any }): any[] => Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => r.selections);
 /** What Foundryborne's level-up dialog reads to mark a checkbox as taken: tier, option, and checkbox number, per level. */
@@ -164,6 +164,14 @@ test("higher-level companion training stores a base that replays to the reviewed
   assert.equal(Object.keys(s.levelData.levelups).length, 4);
   assert.equal(s.levelData.level.current, 5); assert.equal(s.levelData.level.changed, 5);
   assert(plan.actorData.system.biography.background.includes("Reviewed test notes"));
+});
+
+test("companion training marks the checkboxes Foundryborne's companion level-up dialog shows as taken", async () => {
+  const c = character({ level: "5" });
+  c.companion = { enabled: true, name: "Test companion", evasion: 14, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d8", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training: [{ type: "evasion", data: [] }, { type: "stress", data: [] }, { type: "evasion", data: [] }, { type: "vicious", data: ["damage"] }] };
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(companionCheckboxesTaken(plan.companionData!.system.levelData.levelups), ["vicious #1", "stress #1", "evasion #1", "evasion #2"]);
 });
 
 test("unsupported playtest class domains remain recorded without breaking native domain lookups", async () => {
