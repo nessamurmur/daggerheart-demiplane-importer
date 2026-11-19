@@ -39,15 +39,17 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   for (const tier of tiers) {
     const start = tier.levels.start, { nr = 0, modifier = STARTING_EXPERIENCE } = tier.initialAchievements.experience ?? {};
     levelups[start].achievements.proficiency = tier.initialAchievements.proficiency ?? 0;
-    for (const x of experiences.slice(nextExperience, nextExperience + nr)) {
+    const gained = experiences.slice(nextExperience, nextExperience + nr);
+    for (const x of gained) {
       levelups[start].achievements.experiences[x.id] = { name: x.name, modifier };
       Object.assign(x, { gainedAt: start, base: modifier });
       notes[start].push(`new experience ${x.name} (+${modifier})`);
     }
+    if (gained.length < nr) notes[start].push(`${nr - gained.length} new experience${nr - gained.length > 1 ? "s" : ""} missing from the PDF`);
     nextExperience += nr;
   }
 
-  const picks: Pick[] = [];
+  const picks: Pick[] = [], unplaced: string[] = [];
   const repeat = (count: number, pick: Pick) => { for (let i = 0; i < count; i++) picks.push(pick); };
   const current = tierAt(e.level);
   const traitAmount = Object.values(current?.options ?? {}).find(o => o.type === "trait")?.amount || 2;
@@ -62,23 +64,23 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   const raises = experiences.filter(x => x.gainedAt !== null).map(x => ({ ...x, extra: Math.max(0, x.value - x.base) }));
   for (;;) {
     const [a, b] = raises.filter(x => x.extra > 0).sort((x, y) => y.extra - x.extra);
-    if (!b) break;
+    if (!b) { if (a) unplaced.push(`+${a.extra} to ${a.name} (no other raised experience to pair with)`); break; }
     a.extra--; b.extra--;
     picks.push({ type: "experience", label: `+1 to ${a.name} and ${b.name}`, data: [a.id, b.id], minLevel: Math.max(2, a.gainedAt!, b.gainedAt!) });
   }
+  // The starting cards come first, then each level's automatic card takes the highest card that level allows; the extras are the lowest cards left over.
+  const pool = [...e.domainCards].sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
+  for (const level of [1, ...[...levels].reverse()]) {
+    for (let i = 0; i < (level === 1 ? STARTING_DOMAIN_CARDS : tierAt(level)?.domainCardByLevel ?? 0); i++) {
+      const index = pool.findIndex(card => (card.level ?? 0) <= level);
+      if (index < 0) continue;
+      const [card] = pool.splice(index, 1);
+      if (level > 1) levelups[level].achievements.domainCards.push({ uuid: card.uuid, itemUuid: card.itemUuid });
+    }
+  }
   const extraCards = e.domainCards.length - STARTING_DOMAIN_CARDS - levels.reduce((n, l) => n + (tierAt(l)?.domainCardByLevel ?? 0), 0);
-  if (extraCards > 0) {
-    // Each level's automatic card takes the highest card that level allows; the extras are the lowest cards left over.
-    const pool = [...e.domainCards].sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
-    for (let level = e.level; level >= 1; level--) {
-      for (let i = 0; i < (level === 1 ? STARTING_DOMAIN_CARDS : tierAt(level)?.domainCardByLevel ?? 0); i++) {
-        const index = pool.findIndex(card => (card.level ?? 0) <= level);
-        if (index >= 0) pool.splice(index, 1);
-      }
-    }
-    for (const card of pool.reverse().slice(0, extraCards)) {
-      picks.push({ type: "domainCard", label: `extra domain card ${card.name}`, data: [card.uuid], itemUuid: card.itemUuid, minLevel: Math.max(2, card.level ?? 2), cardLevel: card.level ?? undefined });
-    }
+  for (const card of pool.reverse().slice(0, Math.max(0, extraCards))) {
+    picks.push({ type: "domainCard", label: `extra domain card ${card.name}`, data: [card.uuid], itemUuid: card.itemUuid, minLevel: Math.max(2, card.level ?? 2), cardLevel: card.level ?? undefined });
   }
   if (e.multiclass) {
     const m = e.multiclass, secondaryData: Record<string, string> = {};
@@ -120,10 +122,9 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
     }
     return false;
   };
-  const unplaced: string[] = [];
   const cost = (p: Pick) => Math.max(0, ...allowed(p).flatMap(t => Object.values(t.options)).filter(o => o.type === p.type).map(o => o.minCost));
   // Costly picks go first: one-slot picks spread over the levels would leave no level with two free slots.
-  for (const p of picks.sort((a, b) => cost(b) - cost(a) || allowed(a).length - allowed(b).length)) if (!place(p)) unplaced.push(p.label);
+  for (const p of picks.sort((a, b) => cost(b) - cost(a) || allowed(a).length - allowed(b).length)) if (!place(p)) unplaced.push(`${p.label} (no room in the level tiers)`);
 
   for (const record of Object.values(levelups)) {
     bonuses.proficiency += record.achievements.proficiency;

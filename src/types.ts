@@ -74,7 +74,7 @@ export interface LevelupHistory {
   summary: { level: number; choices: string[] }[];
   /** Option slots, counted by cost, that no PDF evidence explains. */
   unexplainedSlots: number;
-  /** Picks the PDF implies but the level tiers have no room for. */
+  /** Choices the PDF implies that could not be recorded, each with its reason. */
   unplaced: string[];
 }
 export interface ResolvedImportPlan {

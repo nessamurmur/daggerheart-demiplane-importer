@@ -215,9 +215,16 @@ test("higher-level imports record level-up history that Foundry replays to the P
   const plan = await buildPlan(c, resolutions, runtime);
   assert(!plan.issues.some(i => i.blocking));
   assert.deepEqual(taken(plan), levelFourTaken);
-  const levelups = plan.actorData.system.levelData.levelups, none = { proficiency: 0, experiences: {}, domainCards: [] };
-  assert.deepEqual(levelups[2].achievements, { proficiency: 1, experiences: { exp2: { name: "Tech Savvy", modifier: 2 } }, domainCards: [] });
-  assert.deepEqual([levelups[3].achievements, levelups[4].achievements], [none, none]);
+  const levelups = plan.actorData.system.levelData.levelups;
+  const cardName = (x: { uuid: string; itemUuid: string }) => { const s = plan.itemSources.find(s => `Actor.${plan.actorData._id}.Item.${s._id}` === x.itemUuid)!; assert.equal(s._stats.compendiumSource, x.uuid); return s.name; };
+  const achieved = (level: number) => ({ ...levelups[level].achievements, domainCards: levelups[level].achievements.domainCards.map(cardName) });
+  assert.deepEqual([2, 3, 4].map(achieved), [
+    { proficiency: 1, experiences: { exp2: { name: "Tech Savvy", modifier: 2 } }, domainCards: ["Card 3"] },
+    { proficiency: 0, experiences: {}, domainCards: ["Card 4"] },
+    { proficiency: 0, experiences: {}, domainCards: ["Card 5"] }
+  ]);
+  const managed = Object.values<any>(levelups).flatMap(r => [...r.achievements.domainCards, ...r.selections.filter((s: any) => s.type === "domainCard").map((s: any) => ({ uuid: s.data[0], itemUuid: s.itemUuid }))]);
+  assert.deepEqual(managed.map(cardName).sort(), ["Card 2", "Card 3", "Card 4", "Card 5"]);
   const card = selections(plan).find(s => s.type === "domainCard");
   const item = plan.itemSources.find(s => `Actor.${plan.actorData._id}.Item.${s._id}` === card.itemUuid);
   assert.equal(item?.type, "domainCard");
@@ -367,6 +374,23 @@ test("with no Proficiency marked above level 1, the tier achievements are record
   assert.equal(plan.calculatedStats["system.proficiency"], 3);
   assert.match(plan.issues.find(i => i.code === "default-proficiency")!.message, /Proficiency of 3 is proposed/);
   assert(!plan.issues.some(i => i.code === "proficiency-below-minimum"));
+});
+
+test("with fewer domain cards than the levels give, the starting cards are never recorded as level-up cards", async () => {
+  const { c, resolutions, runtime } = withCards({ level: "4", "proficiency.1": "Yes" }, [1, 1, 2]);
+  const plan = await buildPlan(c, resolutions, runtime);
+  const recorded = Object.entries<any>(plan.actorData.system.levelData.levelups).flatMap(([level, r]) => r.achievements.domainCards.map((x: any) => `${level}: ${plan.itemSources.find(s => s._stats.compendiumSource === x.uuid)!.name}`));
+  assert.deepEqual(recorded, ["4: Card 2"]);
+});
+
+test("PDF evidence that cannot be recorded as a level-up choice is listed with its reason", async () => {
+  const c = character({ level: "5", ...proficiency(5), "experience_name.0": "Tracking", "experience_bonus.0": "3", "experience_name.1": "Climbing", "experience_bonus.1": "2", "experience_name.2": "Cooking", "experience_bonus.2": "2" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const message = plan.issues.find(i => i.code === "level-history")!.message;
+  assert.match(message, /Level 5: 1 new experience missing from the PDF, \+1 Proficiency\./);
+  assert.match(message, /These choices from the PDF were not recorded: \+1 to Tracking \(no other raised experience to pair with\), \+1 Proficiency \(no room in the level tiers\)\./);
+  assert.equal(plan.actorData.flags[MODULE_ID].incompleteHistory, true);
 });
 
 test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {
