@@ -334,6 +334,16 @@ function companionSource(c: ParsedCharacter, runtime: ImportRuntime, partnerId: 
   };
 }
 
+function reviewedCharacter(c: ParsedCharacter): ImportReport["reviewedCharacter"] {
+  const reviewed = clone(c);
+  return { ...reviewed, source: { ...reviewed.source, fields: Object.entries(reviewed.source.fields) } };
+}
+
+/** Indented JSON with each [field, value] pair on one line, so a field reads beside its value. */
+export function reportJSON(report: ImportReport): string {
+  return JSON.stringify(report, null, 2).replace(/\[\n\s+("(?:[^"\\]|\\.)*"),\n\s+("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?|true|false|null)\n\s+\]/g, "[$1, $2]");
+}
+
 export function makeReport(plan: ResolvedImportPlan, version: string): ImportReport {
   const c = plan.character;
   return {
@@ -341,7 +351,7 @@ export function makeReport(plan: ResolvedImportPlan, version: string): ImportRep
     createdAt: new Date().toISOString(), status: "complete",
     items: plan.resolutions.map(r => ({ name: r.entry.name, source: r.selected ?? null, kind: r.entry.kind })),
     comparisons: clone(plan.comparisons), issues: clone(plan.issues), levelHistory: clone(plan.levelHistory),
-    reviewedCharacter: { ...clone(c), source: { ...clone(c.source), fields: Object.entries(c.source.fields) } }, verifiedStats: [],
+    reviewedCharacter: reviewedCharacter(c), verifiedStats: [],
     fieldDisposition: Object.entries(c.source.fields).filter(([, v]) => v !== null && String(v).trim() !== "").map(([k]) => [k, c.source.handled.includes(k) && !plan.issues.some(i => i.field === k) ? "imported" : "reported"])
   };
 }

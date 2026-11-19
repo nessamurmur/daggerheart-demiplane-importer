@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, sanitizeSource } from "../src/importer.ts";
+import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, reportJSON, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID, TRAITS } from "../src/types.ts";
 import { character, companionCheckboxesTaken, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
@@ -519,4 +519,15 @@ test("level 1 characters have no level-up history, even with a marked trait or e
   assert.deepEqual(plan.actorData.system.levelData.levelups, {});
   assert(!plan.issues.some(i => i.code === "level-history"));
   assert.deepEqual(plan.comparisons.map(x => [x.path, x.pdf, x.calculated]), [["system.resources.hitPoints.max", 7, 6]]);
+});
+
+test("the downloaded report parses to the report and prints each field pair on one line", async () => {
+  const c = character({ "hope.0": "Yes", notes: "a \"quoted\" note\nover two lines" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const report = makeReport(plan, "test");
+  const text = reportJSON(report);
+  assert.deepEqual(JSON.parse(text), JSON.parse(JSON.stringify(report)));
+  assert.match(text, /\["hope\.0", "Yes"\]/);
+  assert.match(text, /\["notes", "a \\"quoted\\" note\\nover two lines"\]/);
 });

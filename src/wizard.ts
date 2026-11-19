@@ -1,6 +1,6 @@
 import { MODULE_ID, TRAITS, type Candidate, type Entry, type ImportReport, type ParsedCharacter, type Resolution, type ResolvedImportPlan } from "./types.ts";
 import { candidatesFor, escapeHTML as esc, finiteNumber, fitCompanionTraining, getPath, resolveEntries, setPath, validateCharacter } from "./core.ts";
-import { buildPlan, executePlan, foundryRuntime, loadCatalog, type ImportRuntime } from "./importer.ts";
+import { buildPlan, executePlan, foundryRuntime, loadCatalog, reportJSON, type ImportRuntime } from "./importer.ts";
 import { readPdf } from "./pdf.ts";
 
 const field = (label: string, path: string, value: unknown, type = "text", attrs = "") => `<label class="dpi-field"><span>${esc(label)}</span><input data-bind="${esc(path)}" aria-label="${esc(label)}" type="${type}" value="${esc(value)}" ${attrs}></label>`;
@@ -201,7 +201,7 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
         const entry: Entry = { id: this.runtime.id(), name: "", description: "", fields: [], kind, include: true, isMulticlass: kind === "class", domains: [], quantity: 1, featureState: 1, inventoryText: kind === "loot" };
         this.character!.entries.push(entry); this.resolutions.push({ entry, candidates: [], selected: undefined });
       } else if (action === "report") {
-        const blob = new Blob([JSON.stringify(this.report, null, 2)], { type: "application/json" });
+        const blob = new Blob([reportJSON(this.report!)], { type: "application/json" });
         const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = `${this.character!.name.replace(/[^\p{L}\p{N}_-]/gu, "_")}-import-report.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
     } catch (error: any) {
