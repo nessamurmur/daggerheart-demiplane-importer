@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, reportJSON, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID, TRAITS } from "../src/types.ts";
-import { character, companionCheckboxesTaken, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
+import { character, companionCheckboxesTaken, LEVEL_TIERS, lowerCompanionLevel, mockRuntime } from "./helpers.ts";
 
 const selections = (plan: { actorData: any }): any[] => Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => r.selections);
 /** What Foundryborne's level-up dialog reads to mark a checkbox as taken: tier, option, and checkbox number, per level. */
@@ -172,6 +172,22 @@ test("companion training marks the checkboxes Foundryborne's companion level-up 
   const { runtime } = mockRuntime();
   const plan = await buildPlan(c, resolveEntries(c, []), runtime);
   assert.deepEqual(companionCheckboxesTaken(plan.companionData!.system.levelData.levelups), ["vicious #1", "stress #1", "evasion #1", "evasion #2"]);
+});
+
+test("lowering the companion's level removes the partner feature its training granted, as for training taken in Foundryborne", async () => {
+  const c = character({ level: "4" });
+  c.companion = { enabled: true, name: "Test companion", evasion: 12, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d6", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training: [{ type: "evasion", data: [] }, { type: "creatureComfort", data: [] }, { type: "stress", data: [] }] };
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  for (const comparison of plan.comparisons) comparison.choice ??= "foundry";
+  const { actor, companion } = await executePlan(plan, runtime);
+  const comfort = "DAGGERHEART.APPLICATIONS.Levelup.actions.creatureComfort.name";
+  const names = () => actor.items.map((i: any) => i.name);
+  assert(names().includes(comfort));
+  lowerCompanionLevel(actor, companion, 3);
+  assert(names().includes(comfort));
+  lowerCompanionLevel(actor, companion, 2);
+  assert(!names().includes(comfort));
 });
 
 test("unsupported playtest class domains remain recorded without breaking native domain lookups", async () => {

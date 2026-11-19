@@ -44,6 +44,18 @@ export function companionCheckboxesTaken(levelups: Record<string, any>): string[
   return Object.entries(COMPANION_OPTIONS).flatMap(([key, count]) => Array.from({ length: count }, (_, i) => i + 1).filter(n => selected[2][key]?.[n]).map(n => `${key} #${n}`));
 }
 
+/** Mirrors Foundryborne's updateLevel with automatic level-up on: lowering a companion's level deletes the items its later selections list in `features`, from the partner when `onPartner`. */
+export function lowerCompanionLevel(partner: any, companion: any, level: number): void {
+  const levelups = companion.system.levelData.levelups;
+  for (const key of Object.keys(levelups).filter(k => Number(k) > level)) {
+    for (const feature of levelups[key].selections.flatMap((s: any) => s.features)) {
+      const document = feature.onPartner ? partner : companion;
+      document.items = document.items.filter((i: any) => i.id !== feature.id);
+    }
+    delete levelups[key];
+  }
+}
+
 function setPath(target: any, path: string, value: unknown): void {
   const parts = path.split("."); let obj = target;
   for (const k of parts.slice(0, -1)) obj = obj[k] ??= {};
@@ -77,7 +89,14 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
     createActor: async source => {
       const actor = runtime.preview(source);
       actor.id = source._id; actor.uuid = `Actor.${source._id}`;
-      actor.createEmbeddedDocuments = async (_type: string, data: any[]) => { operations.push(...data.map(d => d.type)); return data.map(d => ({ id: d._id })); };
+      actor.items = [];
+      // Like Foundry, a created document keeps its source _id only with keepId.
+      actor.createEmbeddedDocuments = async (type: string, data: any[], options: { keepId?: boolean } = {}) => {
+        operations.push(...data.map(d => d.type));
+        const docs = data.map(d => ({ ...structuredClone(d), id: options.keepId ? d._id : runtime.id() }));
+        if (type === "Item") actor.items.push(...docs);
+        return docs;
+      };
       actor.update = async (data: any) => {
         for (const [path, value] of Object.entries(data)) setPath(actor, path, expandObject(value));
       };
