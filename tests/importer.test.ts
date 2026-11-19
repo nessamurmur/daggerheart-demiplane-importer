@@ -417,6 +417,14 @@ test("domain cards from active subclass features are neither level-up picks nor 
   }
 });
 
+test("domain cards beyond the starting cards, level cards, and extra-card picks are listed as not recorded", async () => {
+  const { c, resolutions, runtime } = withCards({ level: "4", "proficiency.1": "Yes" }, [1, 1, 3, 3, 4, 4]);
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(plan.levelHistory?.unplaced, ["domain card Card 5 (no starting, level, or extra-card slot left for it)"]);
+  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /These choices from the PDF were not recorded: domain card Card 5 \(no starting, level, or extra-card slot left for it\)\./);
+  assert.equal(plan.actorData.flags[MODULE_ID].incompleteHistory, true);
+});
+
 test("PDF evidence that cannot be recorded as a level-up choice is listed with its reason", async () => {
   const c = character({ level: "5", ...proficiency(5), "experience_name.0": "Tracking", "experience_bonus.0": "3", "experience_name.1": "Climbing", "experience_bonus.1": "2", "experience_name.2": "Cooking", "experience_bonus.2": "2" });
   const { runtime } = mockRuntime();

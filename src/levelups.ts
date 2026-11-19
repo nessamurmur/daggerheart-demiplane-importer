@@ -70,7 +70,7 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
     a.extra--; b.extra--;
     picks.push({ type: "experience", label: `+1 to ${a.name} and ${b.name}`, data: [a.id, b.id], minLevel: Math.max(2, a.gainedAt!, b.gainedAt!) });
   }
-  // The starting cards come first, then each level's automatic card takes the highest card that level allows. Subclass features take the highest cards left over, because an extra-card pick holds only a card of its tier or lower.
+  // The starting cards come first, then each level's automatic card takes the highest card that level allows. Subclass features take the highest cards left over, because an extra-card pick holds only a card of its tier or lower. The extras take the lowest, and any card still left fits no slot.
   const pool = [...e.domainCards].sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
   for (const level of [1, ...[...levels].reverse()]) {
     for (let i = 0; i < (level === 1 ? STARTING_DOMAIN_CARDS : tierAt(level)?.domainCardByLevel ?? 0); i++) {
@@ -82,9 +82,10 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   }
   const subclassCards = pool.splice(0, e.cardFeatures.length).map((card, i) => `${card.name} (${e.cardFeatures[i]})`);
   const extraCards = e.domainCards.length - STARTING_DOMAIN_CARDS - e.cardFeatures.length - levels.reduce((n, l) => n + (tierAt(l)?.domainCardByLevel ?? 0), 0);
-  for (const card of pool.reverse().slice(0, Math.max(0, extraCards))) {
+  for (const card of pool.reverse().splice(0, Math.max(0, extraCards))) {
     picks.push({ type: "domainCard", label: `extra domain card ${card.name}`, data: [card.uuid], itemUuid: card.itemUuid, minLevel: Math.max(2, card.level ?? 2), cardLevel: card.level ?? undefined });
   }
+  for (const card of pool) unplaced.push(`domain card ${card.name} (no starting, level, or extra-card slot left for it)`);
   if (e.multiclass) {
     const m = e.multiclass, secondaryData: Record<string, string> = {};
     if (m.domain) secondaryData.domain = m.domain;
