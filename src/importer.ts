@@ -4,6 +4,8 @@ import { FEATURE_STATES, inferLevelups, STARTING_PROFICIENCY, STAT_PICKS, type L
 
 export interface ImportRuntime {
   version: string; moduleVersion: string; domains: string[]; isGM: boolean; levelupAuto: boolean;
+  /** Foundryborne's world loadout limit; Infinity when unlimited. */
+  maxLoadout: number;
   id(): string;
   getDocument(uuid: string): Promise<any>;
   preview(source: DocumentSource): any;
@@ -210,10 +212,15 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   };
   plan.actorData = actorData;
   if (issues.some(i => i.blocking)) return plan;
+  const previewActor = (items: DocumentSource[]) => runtime.preview({ ...clone(actorData), items: clone(items) });
   let expanded: DocumentSource[];
   try { expanded = await expandGrants(sources, runtime); }
   catch (e) { issues.push(error((e as Error).message)); return plan; }
-  const previewActor = (items: DocumentSource[]) => runtime.preview({ ...clone(actorData), items: clone(items) });
+  // Granted features are created before the cards, so Foundryborne's loadout check sees their bonuses too.
+  const limit = runtime.maxLoadout + (previewActor(expanded).system.bonuses.maxLoadout);
+  const vaulted = fitLoadout(sources, limit);
+  for (const card of expanded.filter(s => s.type === "domainCard")) card.system.inVault = sources.find(s => s._id === card._id)!.system.inVault;
+  if (vaulted.length) issues.push({ code: "loadout-limit", message: `Foundryborne’s loadout holds ${limit} domain cards, so ${vaulted.join(", ")} ${vaulted.length === 1 ? "goes" : "go"} to the vault. To vault a different card, go back to the details and check its “In vault” box.` });
   const baseline = previewActor(expanded);
   const { stats, notes } = statEvidence(c, baseline, previewActor(expanded.filter(s => CLASS_TYPES.includes(s.type) || CLASS_TYPES.includes(s.system.granter?.type))));
   const history = inferLevelups(levelupEvidence(c, expanded, baseline, stats, actorId));
@@ -253,6 +260,18 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   if (c.companion.enabled) plan.companionData = companionSource(c, runtime, actorId);
   if (c.stats.proficiency === null) issues.push({ code: "default-proficiency", message: `No Proficiency was marked. Foundry’s calculated Proficiency of ${plan.calculatedStats["system.proficiency"]} is proposed; edit it if needed.` });
   return plan;
+}
+
+/** Foundryborne vaults a domain card created while the loadout is full, unless the card ignores the limit.
+ *  Placing those cards here, in creation order, keeps the review and the report true to the created actor. */
+function fitLoadout(sources: DocumentSource[], limit: number): string[] {
+  let loadout = 0;
+  const vaulted: string[] = [];
+  for (const card of sources.filter(s => s.type === "domainCard" && !s.system.inVault)) {
+    if (loadout < limit || card.system.loadoutIgnore) loadout++;
+    else { card.system.inVault = true; vaulted.push(card.name); }
+  }
+  return vaulted;
 }
 
 /** A level-up gain is the PDF value above Foundry's full calculation. Demiplane sheets usually include the item bonuses
@@ -460,7 +479,7 @@ export function foundryRuntime(): ImportRuntime {
   const cache = new Map<string, any>();
   return {
     version: game.system.version, moduleVersion: game.modules.get(MODULE_ID).version, domains: Object.keys(CONFIG.DH.DOMAIN.allDomains()), isGM: game.user.isGM,
-    levelupAuto: !!game.system.settings.automation.levelupAuto,
+    levelupAuto: !!game.system.settings.automation.levelupAuto, maxLoadout: game.system.settings.homebrew.maxLoadout,
     id: () => foundry.utils.randomID(),
     getDocument: async uuid => { if (!cache.has(uuid)) cache.set(uuid, await fromUuid(uuid)); return cache.get(uuid); },
     // Construction already initializes and prepares the document. Calling prepareData

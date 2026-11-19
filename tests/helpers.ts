@@ -71,12 +71,12 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   const allowed = (event: string, ...args: any[]) => hooks[event]?.(...args) !== false;
   const runtime: ImportRuntime = {
     version: "2.10.2", moduleVersion: "test", domains: ["sage", "arcana"], isGM: true,
-    levelupAuto: true,
+    levelupAuto: true, maxLoadout: 5,
     id: () => String(++serial).padStart(16, "0"), localize: key => key,
     getDocument: async uuid => documents[uuid] ? { ...documents[uuid], toObject: () => structuredClone(documents[uuid]) } : null,
     // A deterministic stub isolates planning/transaction tests. Live Foundry verifies actual preparation.
     preview: source => {
-      const system = { ...structuredClone(source.system), evasion: 10, armorScore: { max: 4, value: 0 }, damageThresholds: { major: 7, severe: 14 }, resources: { hitPoints: { max: 6, value: 0 }, stress: { max: 6, value: 0 }, hope: { max: 6, value: 2 } } };
+      const system = { ...structuredClone(source.system), evasion: 10, armorScore: { max: 4, value: 0 }, damageThresholds: { major: 7, severe: 14 }, resources: { hitPoints: { max: 6, value: 0 }, stress: { max: 6, value: 0 }, hope: { max: 6, value: 2 } }, bonuses: { maxLoadout: 0 } };
       system.levelupTiers = { tiers: Object.fromEntries(structuredClone(LEVEL_TIERS).map(t => [t.tier, t])) };
       if (source.type === "character" && runtime.levelupAuto) applyLevelups(system);
       return { ...source, system };

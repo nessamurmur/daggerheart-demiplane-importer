@@ -27,10 +27,10 @@ test("Foundry preview uses the constructor's prepared stats without doubling cla
     prepareData() { this.preparations++; this.system.evasion += 10; this.system.resources.hitPoints.max += 6; }
   }
   try {
-    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
+    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false }, homebrew: { maxLoadout: 5 } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
     (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { DOMAIN: { allDomains: () => ({}) } } };
     const runtime = foundryRuntime();
-    assert.equal(runtime.levelupAuto, false);
+    assert.equal(runtime.levelupAuto, false); assert.equal(runtime.maxLoadout, 5);
     const source = { system: { evasion: 0, resources: { hitPoints: { max: 0 } } } };
     const actor = runtime.preview(source);
     assert.equal(actor.preparations, 1);
@@ -314,6 +314,28 @@ function levelFourRogue() {
     "experience_name.0": "Silver Tongued", "experience_bonus.0": "3", "experience_name.1": "Quick Hands", "experience_bonus.1": "3", "experience_name.2": "Tech Savvy", "experience_bonus.2": "2"
   }, [1, 1, 1, 2, 3, 4]);
 }
+test("cards beyond Foundryborne's loadout limit go to the vault in creation order, and the review names them", async () => {
+  const marked = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`domain_card_archived.0.${i}`, "Yes"]));
+  const { c, resolutions, runtime } = withCards({ level: "4", ...marked }, [1, 1, 1, 2, 3, 4], grantingClass);
+  const vault = (plan: { itemSources: any[] }) => plan.itemSources.filter(s => s.type === "domainCard" && s.system.inVault).map(s => s.name);
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  assert.deepEqual(vault(plan), ["Card 5"]);
+  const notice = plan.issues.find(i => i.code === "loadout-limit");
+  assert(notice && !notice.blocking); assert.match(notice.message, /Card 5/);
+  const { preview, getDocument } = runtime;
+  runtime.preview = source => { const actor = preview(source); actor.system.bonuses = { maxLoadout: -1 }; return actor; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), ["Card 4", "Card 5"], "an item that lowers the limit, like Attuned armor, lowers it here too");
+  runtime.preview = source => { const actor = preview(source); actor.system.bonuses = { maxLoadout: source.items.some((i: any) => i.system?.granter) ? 1 : 0 }; return actor; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), [], "a granted feature that raises the limit counts, as Foundryborne creates grants before cards");
+  runtime.preview = preview;
+  runtime.getDocument = async uuid => { const d = await getDocument(uuid); return uuid.endsWith("card5") ? { ...d, toObject: () => ({ ...d.toObject(), system: { ...d.toObject().system, loadoutIgnore: true } }) } : d; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), [], "a card that ignores the limit stays in the loadout");
+  runtime.getDocument = getDocument; runtime.maxLoadout = Infinity;
+  const unlimited = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(vault(unlimited), []);
+  assert(!unlimited.issues.some(i => i.code === "loadout-limit"));
+});
 const levelFourTaken = { 2: ["t2 hitPoint #1", "t2 trait #1 strength+presence"], 3: ["t2 domainCard #1", "t2 experience #1 exp0+exp1"], 4: [] };
 
 test("higher-level imports record level-up history that Foundry replays to the PDF's stats", async () => {
