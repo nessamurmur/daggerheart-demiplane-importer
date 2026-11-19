@@ -196,9 +196,9 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   assert.equal(report.verifiedStats["system.armorScore.max"], 4);
 });
 
-/** A character whose domain cards, named "Card <index>", match compendium cards of the given levels. */
-function withCards(fields: Record<string, string>, cardLevels: number[]) {
-  const documents: Record<string, any> = {}, candidates: any[] = [];
+/** A character whose domain cards, named "Card <index>", match compendium cards of the given levels. Other documents are added to the compendium. */
+function withCards(fields: Record<string, string>, cardLevels: number[], others: Record<string, any> = {}) {
+  const documents: Record<string, any> = { ...others }, candidates: any[] = Object.entries(others).map(([uuid, d]) => ({ uuid, name: d.name, type: d.type, pack: "Test", system: {} }));
   cardLevels.forEach((level, i) => {
     const uuid = `Compendium.test.Item.card${i}`, name = `Card ${i}`;
     fields[`domain_card_name.0.${i}`] = name; fields[`domain_card_domain.0.${i}`] = "sage";
@@ -208,6 +208,11 @@ function withCards(fields: Record<string, string>, cardLevels: number[]) {
   const c = character(fields);
   return { c, resolutions: resolveEntries(c, candidates), ...mockRuntime(documents) };
 }
+/** Foundryborne's School of Knowledge, whose feature at each step grants a domain card through its description alone. */
+const schoolOfKnowledge = {
+  "Compendium.test.Item.knowledge": { name: "Fixture Path", type: "subclass", system: { featureState: 1, features: ["foundation", "specialization", "mastery"].map(type => ({ type, item: `Compendium.test.Item.${type}` })) } },
+  ...Object.fromEntries([["foundation", "Prepared"], ["specialization", "Accomplished"], ["mastery", "Brilliant"]].map(([type, name]) => [`Compendium.test.Item.${type}`, { name, type: "feature", system: { description: "<p>Take an additional domain card of your level or lower from a domain you have access to.</p>" } }]))
+};
 const proficiency = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`proficiency.${i}`, "Yes"]));
 function levelFourRogue() {
   return withCards({
@@ -393,6 +398,23 @@ test("with fewer domain cards than the levels give, the starting cards are never
   const plan = await buildPlan(c, resolutions, runtime);
   const recorded = Object.entries<any>(plan.actorData.system.levelData.levelups).flatMap(([level, r]) => r.achievements.domainCards.map((x: any) => `${level}: ${plan.itemSources.find(s => s._stats.compendiumSource === x.uuid)!.name}`));
   assert.deepEqual(recorded, ["4: Card 2"]);
+});
+
+test("domain cards from active subclass features are neither level-up picks nor level cards", async () => {
+  for (const [level, fields, cards, extraCards, subclassCards] of [
+    ["2", {}, [1, 1, 1, 1], [], "Card 3 (Prepared)"],
+    ["6", { subclass_specialization_1: "Yes" }, [1, 1, 2, 3, 4, 5, 6, 1, 1], [], "Card 7 (Prepared), Card 8 (Accomplished)"],
+    ["6", { subclass_specialization_1: "Yes" }, [1, 1, 2, 3, 4, 5, 6, 1, 1, 1], ["t2 domainCard #1"], "Card 7 (Prepared), Card 8 (Accomplished)"]
+  ] as const) {
+    const { c, resolutions, runtime } = withCards({ level, subclass_name_1: "Fixture Path", subclass_class_1: "Fixture Class", subclass_foundation_1: "Yes", ...proficiency(Number(level) >= 5 ? 3 : 2), ...fields }, [...cards], schoolOfKnowledge);
+    const plan = await buildPlan(c, resolutions, runtime);
+    assert(!plan.issues.some(i => i.blocking), `level ${level}`);
+    assert.deepEqual(selections(plan).filter(s => s.type === "domainCard").map(s => `t${s.tier} ${s.optionKey} #${s.checkboxNr}`), extraCards, `level ${level}, ${cards.length} cards`);
+    const recorded = Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => [...r.achievements.domainCards.map((x: any) => x.uuid), ...r.selections.filter((s: any) => s.type === "domainCard").map((s: any) => s.data[0])]);
+    for (const name of subclassCards.split(", ").map(x => x.split(" (")[0])) assert(!recorded.includes(plan.itemSources.find(s => s.name === name)!._stats.compendiumSource), `${name} is recorded in the level-up history`);
+    assert(plan.issues.find(i => i.code === "level-history")!.message.includes(`Domain cards from subclass features, not level-up picks: ${subclassCards}.`), `level ${level}`);
+    assert.deepEqual(plan.levelHistory?.unplaced, [], `level ${level}`);
+  }
 });
 
 test("PDF evidence that cannot be recorded as a level-up choice is listed with its reason", async () => {

@@ -8,6 +8,8 @@ export interface LevelupEvidence {
   stats: Partial<Record<StatPick, { pdf: number; foundry: number }>>;
   proficiency: number | null;
   domainCards: { name: string; uuid: string; itemUuid: string; level: number | null }[];
+  /** Active subclass features that each grant an additional domain card, by name. */
+  cardFeatures: string[];
   subclasses: { name: string; uuid: string; featureState: number; isMulticlass: boolean }[];
   multiclass: { name: string; uuid: string; itemUuid: string; domain: string | null; subclassUuid: string | null } | null;
 }
@@ -21,13 +23,13 @@ export const STAT_PICKS = [["hitPoint", "Hit Point", "hitPoints"], ["stress", "S
 type StatPick = typeof STAT_PICKS[number][0];
 export const STARTING_PROFICIENCY = 1;
 const STARTING_EXPERIENCE = 2, STARTING_DOMAIN_CARDS = 2;
-const FEATURE_STATES = ["", "foundation", "specialization", "mastery"];
+export const FEATURE_STATES = ["", "foundation", "specialization", "mastery"];
 /** Foundryborne's level-up dialog disables one of these options in a tier that holds the other. */
 const EXCLUSIVE: Record<string, string> = { subclass: "multiclass", multiclass: "subclass" };
 
 export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   const bonuses: LevelupHistory["bonuses"] = { traits: {}, proficiency: 0, experiences: {} };
-  if (e.level < 2) return { levelups: {}, bonuses, summary: [], unexplainedSlots: 0, unplaced: [] };
+  if (e.level < 2) return { levelups: {}, bonuses, summary: [], unexplainedSlots: 0, unplaced: [], subclassCards: [] };
   const tiers = e.tiers.filter(t => t.levels.start >= 2 && t.levels.start <= e.level).sort((a, b) => a.levels.start - b.levels.start);
   const tierAt = (level: number) => tiers.find(t => level >= t.levels.start && level <= t.levels.end);
   const levels = Array.from({ length: e.level - 1 }, (_, i) => i + 2);
@@ -68,7 +70,7 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
     a.extra--; b.extra--;
     picks.push({ type: "experience", label: `+1 to ${a.name} and ${b.name}`, data: [a.id, b.id], minLevel: Math.max(2, a.gainedAt!, b.gainedAt!) });
   }
-  // The starting cards come first, then each level's automatic card takes the highest card that level allows; the extras are the lowest cards left over.
+  // The starting cards come first, then each level's automatic card takes the highest card that level allows. Subclass features take the highest cards left over, because an extra-card pick holds only a card of its tier or lower.
   const pool = [...e.domainCards].sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
   for (const level of [1, ...[...levels].reverse()]) {
     for (let i = 0; i < (level === 1 ? STARTING_DOMAIN_CARDS : tierAt(level)?.domainCardByLevel ?? 0); i++) {
@@ -78,7 +80,8 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
       if (level > 1) levelups[level].achievements.domainCards.push({ uuid: card.uuid, itemUuid: card.itemUuid });
     }
   }
-  const extraCards = e.domainCards.length - STARTING_DOMAIN_CARDS - levels.reduce((n, l) => n + (tierAt(l)?.domainCardByLevel ?? 0), 0);
+  const subclassCards = pool.splice(0, e.cardFeatures.length).map((card, i) => `${card.name} (${e.cardFeatures[i]})`);
+  const extraCards = e.domainCards.length - STARTING_DOMAIN_CARDS - e.cardFeatures.length - levels.reduce((n, l) => n + (tierAt(l)?.domainCardByLevel ?? 0), 0);
   for (const card of pool.reverse().slice(0, Math.max(0, extraCards))) {
     picks.push({ type: "domainCard", label: `extra domain card ${card.name}`, data: [card.uuid], itemUuid: card.itemUuid, minLevel: Math.max(2, card.level ?? 2), cardLevel: card.level ?? undefined });
   }
@@ -138,6 +141,6 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
     levelups, bonuses,
     summary: levels.map(level => ({ level, choices: notes[level] })),
     unexplainedSlots: levels.reduce((n, l) => n + (tierAt(l)?.availableOptions ?? 0) - spent(l), 0),
-    unplaced
+    unplaced, subclassCards
   };
 }

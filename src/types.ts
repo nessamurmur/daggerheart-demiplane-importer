@@ -76,6 +76,8 @@ export interface LevelupHistory {
   unexplainedSlots: number;
   /** Choices the PDF implies that could not be recorded, each with its reason. */
   unplaced: string[];
+  /** Domain cards that subclass features grant, each with its feature. Level-up history never holds them. */
+  subclassCards: string[];
 }
 export interface ResolvedImportPlan {
   character: ParsedCharacter; resolutions: Resolution[];
