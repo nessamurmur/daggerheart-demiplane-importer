@@ -348,6 +348,35 @@ test("two-slot picks are placed before one-slot picks fill the levels they need"
   }
 });
 
+test("when the first fit leaves a pick out, every pick that fits some legal layout is recorded", async () => {
+  const { c, resolutions, runtime } = withCards({
+    level: "5", hp_max: "8", stress_max: "8", evasion: "11", ...proficiency(3),
+    "experience_name.0": "A", "experience_bonus.0": "3", "experience_name.1": "B", "experience_bonus.1": "3", "experience_name.2": "C", "experience_bonus.2": "2", "experience_name.3": "D", "experience_bonus.3": "2"
+  }, [1, 1, 1, 2, 3, 4, 5, 1]);
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(plan.levelHistory?.unplaced, []);
+  assert.deepEqual(selections(plan).map(s => s.type).sort(), ["domainCard", "domainCard", "evasion", "experience", "hitPoint", "hitPoint", "stress", "stress"]);
+  for (const [level, record] of Object.entries<any>(plan.actorData.system.levelData.levelups)) {
+    assert(record.selections.reduce((n: number, s: any) => n + s.minCost, 0) <= 2, `level ${level} spends more than its two option slots`);
+    for (const s of record.selections) assert(!record.selections.some((x: any) => x.optionKey === s.optionKey && x.tier !== s.tier), `level ${level} holds ${s.optionKey} from two tiers`);
+  }
+  const boxes = selections(plan).map(s => `t${s.tier} ${s.optionKey} #${s.checkboxNr}`);
+  assert.equal(new Set(boxes).size, boxes.length);
+  assert.deepEqual(plan.comparisons, []);
+});
+
+test("a first fit that stacks both tier-4 trait picks on level 8 is undone, so both experience raises from level 8 on fit", async () => {
+  const { c, resolutions, runtime } = withCards({
+    level: "9", hp_max: "8", stress_max: "7", evasion: "12", ...proficiency(4), finesse_marked: "Yes", instinct_marked: "Yes", presence_marked: "Yes", knowledge_marked: "Yes",
+    subclass_name_1: "Fixture Path", subclass_class_1: "Fixture Class", subclass_specialization_1: "Yes",
+    ...Object.fromEntries([5, 3, 2, 2, 4].flatMap((bonus, i) => [[`experience_name.${i}`, `E${i}`], [`experience_bonus.${i}`, String(bonus)]]))
+  }, [1, 1, 2, 1, 2, 2, 2, 1, 6, 3, 2, 3]);
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(plan.levelHistory?.unplaced, []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "trait").map(s => s.level).sort(), [8, 9]);
+  assert.deepEqual(plan.comparisons, []);
+});
+
 test("marked traits are recorded in the current tier, so Foundry keeps them marked", async () => {
   const c = character({ level: "5", agility: "2", strength: "1", agility_marked: "Yes", strength_marked: "Yes", ...proficiency(3) });
   const { runtime } = mockRuntime();

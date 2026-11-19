@@ -1,4 +1,4 @@
-import type { LevelTier, LevelupHistory, LevelupRecord, Trait } from "./types.ts";
+import type { LevelTier, LevelupHistory, LevelupRecord, LevelupSelection, Trait } from "./types.ts";
 
 /** What a PDF shows about earlier level-ups. */
 export interface LevelupEvidence {
@@ -26,6 +26,8 @@ const STARTING_EXPERIENCE = 2, STARTING_DOMAIN_CARDS = 2;
 export const FEATURE_STATES = ["", "foundation", "specialization", "mastery"];
 /** Foundryborne's level-up dialog disables one of these options in a tier that holds the other. */
 const EXCLUSIVE: Record<string, string> = { subclass: "multiclass", multiclass: "subclass" };
+/** Search steps allowed after first fit leaves picks out. */
+const SEARCH_BUDGET = 2_000;
 
 export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   const bonuses: LevelupHistory["bonuses"] = { traits: {}, proficiency: 0, experiences: {} };
@@ -101,34 +103,66 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   }
 
   const spent = (level: number) => levelups[level].selections.reduce((n, s) => n + s.minCost, 0);
+  const freeSlots = () => levels.reduce((n, l) => n + (tierAt(l)?.availableOptions ?? 0) - spent(l), 0);
   const allowed = (p: Pick) => tiers.filter(t => (p.tier === undefined || t.tier === p.tier) && (p.cardLevel === undefined || t.levels.end >= p.cardLevel) && Object.values(t.options).some(o => o.type === p.type));
-  const place = (p: Pick): boolean => {
-    for (const tier of allowed(p)) {
-      const inTier = levels.flatMap(l => levelups[l].selections).filter(s => s.tier === tier.tier);
-      if (inTier.some(s => s.type === EXCLUSIVE[p.type])) continue;
-      for (const [optionKey, option] of Object.entries(tier.options)) {
-        if (option.type !== p.type) continue;
-        const used = inTier.filter(s => s.optionKey === optionKey).reduce((n, s) => n + s.minCost, 0);
-        if (used + option.minCost > option.checkboxSelections) continue;
-        // One option key per level holds one tier: Foundryborne keys a level's choices by option key and checkbox number.
-        const level = levels.find(l => l >= Math.max(tier.levels.start, p.minLevel) && spent(l) + option.minCost <= (tierAt(l)?.availableOptions ?? 0) && !levelups[l].selections.some(s => s.optionKey === optionKey && s.tier !== tier.tier));
-        if (level === undefined) continue;
-        levelups[level].selections.push({
-          tier: tier.tier, level, optionKey, type: option.type, checkboxNr: used + 1, minCost: option.minCost,
-          ...(option.value != null ? { value: option.value } : {}), ...(option.amount != null ? { amount: option.amount } : {}),
-          data: [...p.data],
-          ...(p.type === "domainCard" ? { secondaryData: { limit: String(tier.levels.end) } } : p.secondaryData ? { secondaryData: p.secondaryData } : {}),
-          ...(p.itemUuid ? { itemUuid: p.itemUuid } : {})
-        });
-        notes[level].push(p.label);
-        return true;
-      }
-    }
-    return false;
+  /** Each free checkbox for the pick and each level that can take it, as the selection it would record, in first-fit order. */
+  const moves = (p: Pick): LevelupSelection[] => allowed(p).flatMap(tier => {
+    const inTier = levels.flatMap(l => levelups[l].selections).filter(s => s.tier === tier.tier);
+    if (inTier.some(s => s.type === EXCLUSIVE[p.type])) return [];
+    return Object.entries(tier.options).filter(([, option]) => option.type === p.type).flatMap(([optionKey, option]) => {
+      const used = inTier.filter(s => s.optionKey === optionKey).reduce((n, s) => n + s.minCost, 0);
+      if (used + option.minCost > option.checkboxSelections) return [];
+      // One option key per level holds one tier: Foundryborne keys a level's choices by option key and checkbox number.
+      return levels.filter(l => l >= Math.max(tier.levels.start, p.minLevel) && spent(l) + option.minCost <= (tierAt(l)?.availableOptions ?? 0) && !levelups[l].selections.some(s => s.optionKey === optionKey && s.tier !== tier.tier)).map(level => ({
+        tier: tier.tier, level, optionKey, type: option.type, checkboxNr: used + 1, minCost: option.minCost,
+        ...(option.value != null ? { value: option.value } : {}), ...(option.amount != null ? { amount: option.amount } : {}),
+        data: [...p.data],
+        ...(p.type === "domainCard" ? { secondaryData: { limit: String(tier.levels.end) } } : p.secondaryData ? { secondaryData: p.secondaryData } : {}),
+        ...(p.itemUuid ? { itemUuid: p.itemUuid } : {})
+      }));
+    });
+  });
+  /** At least this many of the picks fit in no layout: they outnumber the free slots, or picks of one type outnumber its free checkboxes from their earliest level on, where a level takes each option key from one tier only. */
+  const shortfall = (rest: Pick[]) => {
+    const used: Record<string, number> = {};
+    for (const s of levels.flatMap(l => levelups[l].selections)) used[`${s.tier} ${s.optionKey}`] = (used[`${s.tier} ${s.optionKey}`] ?? 0) + s.minCost;
+    const options = (type: string, level = e.level) => tiers.filter(t => t.levels.start <= level).flatMap(t => Object.entries(t.options).filter(([, o]) => o.type === type)
+      .map(([key, o]) => ({ tier: t.tier, key, minCost: o.minCost, free: Math.floor((o.checkboxSelections - (used[`${t.tier} ${key}`] ?? 0)) / o.minCost) })));
+    const room = (level: number, type: string) => {
+      const open = options(type, level).filter(o => !levelups[level].selections.some(s => s.optionKey === o.key && s.tier !== o.tier));
+      const perKey = [...new Set(open.map(o => o.key))].reduce((n, key) => n + Math.max(...open.filter(o => o.key === key).map(o => o.free)), 0);
+      return Math.min(perKey, Math.floor(((tierAt(level)?.availableOptions ?? 0) - spent(level)) / Math.min(...open.map(o => o.minCost))));
+    };
+    const byType = [...new Set(rest.map(p => p.type))].reduce((short, type) => {
+      const starts = rest.filter(p => p.type === type).map(p => p.minLevel), rooms = levels.map(l => room(l, type)), total = options(type).reduce((n, o) => n + o.free, 0);
+      return short + Math.max(0, ...starts.map(m => starts.filter(x => x >= m).length - Math.min(total, rooms.reduce((n, r, j) => levels[j] >= m ? n + r : n, 0))));
+    }, 0);
+    return Math.max(byType, rest.length - freeSlots());
   };
   const cost = (p: Pick) => Math.max(0, ...allowed(p).flatMap(t => Object.values(t.options)).filter(o => o.type === p.type).map(o => o.minCost));
   // Costly picks go first: one-slot picks spread over the levels would leave no level with two free slots.
-  for (const p of picks.sort((a, b) => cost(b) - cost(a) || allowed(a).length - allowed(b).length)) if (!place(p)) unplaced.push(`${p.label} (no room in the level tiers)`);
+  const order = picks.sort((a, b) => cost(b) - cost(a) || allowed(a).length - allowed(b).length);
+  let best: (LevelupSelection | undefined)[] = order.map(p => { const [s] = moves(p); if (s) levelups[s.level].selections.push(s); return s; });
+  let most = best.filter(Boolean).length;
+  if (most < order.length) {
+    let budget = SEARCH_BUDGET;
+    // First fit can block a layout that holds more picks, so search every move with backtracking, keeping the layout that holds the most.
+    const path: (LevelupSelection | undefined)[] = [];
+    const search = (i: number, placed: number) => {
+      if (placed + order.length - i - shortfall(order.slice(i)) <= most || budget-- <= 0) return;
+      if (i === order.length) { best = [...path]; most = placed; return; }
+      for (const s of moves(order[i])) {
+        levelups[s.level].selections.push(s); path.push(s);
+        search(i + 1, placed + 1);
+        path.pop(); levelups[s.level].selections.pop();
+      }
+      path.push(undefined); search(i + 1, placed); path.pop();
+    };
+    for (const l of levels) levelups[l].selections = [];
+    search(0, 0);
+    for (const s of best) if (s) levelups[s.level].selections.push(s);
+  }
+  order.forEach((p, i) => { const s = best[i]; if (s) notes[s.level].push(p.label); else unplaced.push(`${p.label} (no room in the level tiers)`); });
 
   for (const record of Object.values(levelups)) {
     bonuses.proficiency += record.achievements.proficiency;
@@ -141,7 +175,7 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   return {
     levelups, bonuses,
     summary: levels.map(level => ({ level, choices: notes[level] })),
-    unexplainedSlots: levels.reduce((n, l) => n + (tierAt(l)?.availableOptions ?? 0) - spent(l), 0),
+    unexplainedSlots: freeSlots(),
     unplaced, subclassCards
   };
 }
