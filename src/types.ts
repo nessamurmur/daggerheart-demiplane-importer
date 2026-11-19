@@ -46,6 +46,8 @@ export interface Resolution {
   entry: Entry; candidates: Candidate[];
   /** undefined = unresolved; null = editable PDF item. */
   selected: string | null | undefined;
+  /** The entry's name when the GM chose this source. Absent while the matcher owns the resolution. */
+  chosenFor?: string;
 }
 export interface StatComparison {
   path: string; label: string; pdf: number; calculated: number;

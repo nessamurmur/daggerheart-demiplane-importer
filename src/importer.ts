@@ -102,10 +102,10 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   for (const e of c.entries.filter(e => !e.include)) for (const field of e.fields) issues.push({ code: "excluded-item", field, message: `${e.name}: excluded during review; source data retained in the report.` });
   const actorId = runtime.id();
   const sources: DocumentSource[] = [];
-  const plan: ResolvedImportPlan = { character: clone(c), resolutions: clone(resolutions), actorData: {}, itemSources: sources, comparisons: [], calculatedStats: {}, issues, systemVersion: runtime.version, reviewed: false };
-  for (const resolution of resolutions) {
+  const included = resolutions.filter(r => r.entry.include);
+  const plan: ResolvedImportPlan = { character: clone(c), resolutions: clone(included), actorData: {}, itemSources: sources, comparisons: [], calculatedStats: {}, issues, systemVersion: runtime.version, reviewed: false };
+  for (const resolution of included) {
     const e = resolution.entry;
-    if (!e.include) continue;
     if (!e.name.trim()) { issues.push(error("Every included item needs a name.")); continue; }
     if (resolution.selected === undefined) { issues.push(error(`Choose a content source for “${e.name}”.`)); continue; }
     let source: DocumentSource;
