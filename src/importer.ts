@@ -75,11 +75,14 @@ function fallback(entry: Entry, c: ParsedCharacter, runtime: ImportRuntime, issu
   return { name: entry.name, type, system, effects: [] };
 }
 
+/** Feature links are { type, item } on classes, subclasses and ancestries, and bare UUID strings on communities (Foundryborne reads both: `f.item ?? f`). */
+const linkedUuid = (link: any): string | undefined => typeof link === "string" ? link : typeof link?.item === "string" ? link.item : link?.item?.uuid;
+
 async function expandGrants(sources: DocumentSource[], runtime: ImportRuntime): Promise<DocumentSource[]> {
   const expanded = clone(sources);
   for (const granter of sources) {
     for (const link of granter.system.features ?? []) {
-      const uuid = typeof link.item === "string" ? link.item : link.item?.uuid;
+      const uuid = linkedUuid(link);
       if (!uuid) continue;
       const document = await runtime.getDocument(uuid);
       if (!document) throw new Error(`The linked feature ${uuid} for ${granter.name} is unavailable. Select another content source or create an editable item.`);
@@ -351,6 +354,16 @@ function companionSource(c: ParsedCharacter, runtime: ImportRuntime, partnerId: 
   };
 }
 
+function reviewedCharacter(c: ParsedCharacter): ImportReport["reviewedCharacter"] {
+  const reviewed = clone(c);
+  return { ...reviewed, source: { ...reviewed.source, fields: Object.entries(reviewed.source.fields) } };
+}
+
+/** Indented JSON with each [field, value] pair on one line, so a field reads beside its value. */
+export function reportJSON(report: ImportReport): string {
+  return JSON.stringify(report, null, 2).replace(/\[\n\s+("(?:[^"\\]|\\.)*"),\n\s+("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?|true|false|null)\n\s+\]/g, "[$1, $2]");
+}
+
 export function makeReport(plan: ResolvedImportPlan, version: string): ImportReport {
   const c = plan.character;
   return {
@@ -358,9 +371,23 @@ export function makeReport(plan: ResolvedImportPlan, version: string): ImportRep
     createdAt: new Date().toISOString(), status: "complete",
     items: plan.resolutions.map(r => ({ name: r.entry.name, source: r.selected ?? null, kind: r.entry.kind })),
     comparisons: clone(plan.comparisons), issues: clone(plan.issues), levelHistory: clone(plan.levelHistory),
-    reviewedCharacter: clone(c), verifiedStats: {},
-    fieldDisposition: Object.fromEntries(Object.entries(c.source.fields).filter(([, v]) => v !== null && String(v).trim() !== "").map(([k]) => [k, c.source.handled.includes(k) && !plan.issues.some(i => i.field === k) ? "imported" : "reported"]))
+    reviewedCharacter: reviewedCharacter(c), verifiedStats: [],
+    fieldDisposition: Object.entries(c.source.fields).filter(([, v]) => v !== null && String(v).trim() !== "").map(([k]) => [k, c.source.handled.includes(k) && !plan.issues.some(i => i.field === k) ? "imported" : "reported"])
   };
+}
+
+/** Foundry declines a write without throwing: an update, a delete, or a single create returns undefined. */
+function written<T>(result: T | undefined, declined: string): T {
+  if (!result) throw new Error(declined);
+  return result;
+}
+/** With diff false Foundry returns the actor even when nothing changes, so undefined can only mean declined. */
+const update = async (actor: any, data: DocumentSource, declined: string) => written(await actor.update(data, { diff: false }), declined);
+/** A declined embedded document is missing from the creation's result. */
+async function createEmbedded(actor: any, type: string, sources: DocumentSource[], declined: string): Promise<any[]> {
+  const docs = await actor.createEmbeddedDocuments(type, clone(sources), { keepId: true });
+  if (sources.some(s => !docs.some((d: any) => d.id === s._id))) throw new Error(declined);
+  return docs;
 }
 
 /** Creation is deliberately sequential: failures roll back only this import's documents. */
@@ -371,63 +398,62 @@ export async function executePlan(plan: ResolvedImportPlan, runtime: ImportRunti
   const report = makeReport(plan, runtime.moduleVersion);
   try {
     // Start with no embedded documents, so the system's pre-create and grant behavior runs normally.
-    const actor = await runtime.createActor(clone(plan.actorData));
-    if (!actor) throw new Error("Foundry declined to create the character.");
+    const actor = written(await runtime.createActor(clone(plan.actorData)), "Foundry declined to create the character.");
     created.push(actor);
     const ordered = [...plan.itemSources].sort((a, b) => rank(a) - rank(b));
     for (const source of ordered) {
-      const docs = await actor.createEmbeddedDocuments("Item", [clone(source)], { keepId: true });
-      if (!docs?.some((d: any) => d.id === source._id)) throw new Error(`Foundry declined to add “${source.name}”.`);
+      // Foundryborne creates the item's linked features in the same operation.
+      const docs = await createEmbedded(actor, "Item", [source], `Foundry declined to add “${source.name}”.`);
+      const granted = new Set(docs.map(d => d._stats.compendiumSource ?? d._stats.duplicateSource));
+      for (const uuid of (source.system.features ?? []).map(linkedUuid)) {
+        if (uuid && !granted.has(uuid)) throw new Error(`Foundry declined to add “${(await runtime.getDocument(uuid))?.name ?? uuid}”, granted by “${source.name}”.`);
+      }
     }
     const effects = adjustmentEffects(plan.comparisons, () => runtime.id());
-    if (effects.length) {
-      const docs = await actor.createEmbeddedDocuments("ActiveEffect", effects, { keepId: true });
-      if (docs.length !== effects.length) throw new Error("Foundry declined an imported stat adjustment.");
-    }
+    if (effects.length) await createEmbedded(actor, "ActiveEffect", effects, "Foundry declined an imported stat adjustment.");
     let companion: any;
     if (plan.companionData) {
-      companion = await runtime.createActor(clone(plan.companionData));
-      if (!companion) throw new Error("Foundry declined to create the companion.");
+      companion = written(await runtime.createActor(clone(plan.companionData)), "Foundry declined to create the companion.");
       created.push(companion);
-      await actor.update({ "system.companion": companion.uuid });
+      await update(actor, { "system.companion": companion.uuid }, "Foundry declined to link the companion to the character.");
       report.companionUuid = companion.uuid;
       for (const training of plan.character.companion.training.filter(t => ["creatureComfort", "armored", "bonded"].includes(t.type))) {
-        const prefix = `DAGGERHEART.APPLICATIONS.Levelup.actions.${training.type}`;
-        await actor.createEmbeddedDocuments("Item", [{ name: runtime.localize(`${prefix}.name`), type: "feature", system: { description: paragraphs(runtime.localize(`${prefix}.description`)) }, flags: { [MODULE_ID]: { companionTraining: training.type } } }]);
+        const prefix = `DAGGERHEART.APPLICATIONS.Levelup.actions.${training.type}`, name = runtime.localize(`${prefix}.name`);
+        await createEmbedded(actor, "Item", [{ _id: runtime.id(), name, type: "feature", system: { description: paragraphs(runtime.localize(`${prefix}.description`)) }, flags: { [MODULE_ID]: { companionTraining: training.type } } }], `Foundry declined to add the companion training feature “${name}”.`);
       }
     }
     const c = plan.character;
     // Restore biography after class hooks append suggested background questions.
-    await actor.update({
+    await update(actor, {
       "system.biography": biography(c),
       "system.resources.hitPoints.value": c.resources.hitPoints,
       "system.resources.stress.value": c.resources.stress,
       "system.resources.hope.value": c.resources.hope
-    });
+    }, "Foundry declined to restore the biography and marked resources.");
     if (c.resources.armor) await actor.system.updateArmorValue({ value: c.resources.armor });
     for (const [path, calculated] of Object.entries(plan.calculatedStats)) {
       const decision = plan.comparisons.find(s => s.path === path);
       const expected = decision?.choice === "pdf" ? decision.pdf : calculated;
       const actual = Number(getPath(actor, path));
       if (actual !== expected) throw new Error(`${decision?.label ?? path} did not match the review: expected ${expected}, got ${actual}.`);
-      report.verifiedStats[path] = actual;
+      report.verifiedStats.push([path, actual]);
     }
     for (const [key, expected] of Object.entries(c.resources)) {
       const path = key === "armor" ? "system.armorScore.value" : `system.resources.${key}.value`;
       if (Number(getPath(actor, path)) !== expected) throw new Error(`The imported ${key} marks do not fit the reviewed character.`);
     }
     report.actorUuid = actor.uuid;
-    await actor.update({ [`flags.${MODULE_ID}.report`]: report, [`flags.${MODULE_ID}.sourceFields`]: c.source.fields });
+    await update(actor, { [`flags.${MODULE_ID}.report`]: report, [`flags.${MODULE_ID}.sourceFields`]: report.reviewedCharacter.source.fields }, "Foundry declined to save the import report on the character.");
     return { actor, companion, report };
   } catch (error: any) {
-    report.status = "failed";
-    report.cleanupFailures = [];
+    const cleanupFailures: string[] = [];
     for (const document of [...created].reverse()) {
-      try { await document.delete(); }
-      catch (failure: any) { report.cleanupFailures.push(`${document.name} (${document.uuid}): ${failure.message}`); }
+      try { written(await document.delete(), "Foundry declined to delete it."); }
+      catch (failure: any) { cleanupFailures.push(`${document.name} (${document.uuid}): ${failure.message}`); }
     }
-    error.importReport = report;
-    if (report.cleanupFailures.length) error.message += ` Cleanup could not remove: ${report.cleanupFailures.join("; ")}`;
+    // A fresh report, so nothing names a rolled-back document or the values verified on it.
+    error.importReport = { ...makeReport(plan, runtime.moduleVersion), status: "failed", error: error.message, cleanupFailures } satisfies ImportReport;
+    if (cleanupFailures.length) error.message += ` Cleanup could not remove: ${cleanupFailures.join("; ")}`;
     throw error;
   }
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { candidatesFor, checked, escapeHTML, finiteNumber, normalizeName, parseFields, resolveEntries, setPath, validateCharacter } from "../src/core.ts";
+import { candidatesFor, checked, escapeHTML, finiteNumber, fitCompanionTraining, normalizeName, parseFields, resolveEntries, setPath, validateCharacter } from "../src/core.ts";
 import { character } from "./helpers.ts";
 
 test("zero, negatives, missing values and malformed numbers remain distinct", () => {
@@ -68,4 +68,29 @@ test("companion training must be complete, bounded, and consistent", () => {
   assert.deepEqual(validateCharacter(c), []);
   c.companion.training[1].type = "";
   assert(validateCharacter(c).some(i => i.message.includes("training option")));
+});
+test("companion training follows a level change, keeping choices for the levels that remain", () => {
+  const c = character({ level: "4" }); c.companion.enabled = true;
+  Object.assign(c.companion, { name: "Test Companion", evasion: 12, stressMax: 4, attackName: "Bite", experiences: [{ name: "Scout", value: 2 }, { name: "Guard", value: 2 }], training: [{ type: "evasion", data: [] }, { type: "experience", data: [] }, { type: "creatureComfort", data: [] }] });
+  c.level = 3;
+  c.companion.training = fitCompanionTraining(c.companion.training, c.level);
+  assert.deepEqual(c.companion.training, [{ type: "evasion", data: [] }, { type: "experience", data: [] }]);
+  assert.deepEqual(validateCharacter(c), []);
+  c.level = 4;
+  c.companion.training = fitCompanionTraining(c.companion.training, c.level);
+  assert.deepEqual(c.companion.training, [{ type: "evasion", data: [] }, { type: "experience", data: [] }, { type: "", data: [] }]);
+  assert.deepEqual(validateCharacter(c).map(i => i.message), ["Choose a valid companion training option for every previous level."]);
+  c.level = 1;
+  assert.deepEqual(fitCompanionTraining(c.companion.training, c.level), []);
+});
+
+test("a blank level asks only for the level, and keeps recorded companion training", () => {
+  const c = character({ level: "4" });
+  c.companion.enabled = true;
+  c.companion.training = [{ type: "evasion", data: [] }, { type: "hope", data: [] }, { type: "stress", data: [] }];
+  c.level = null;
+  const messages = validateCharacter(c).map(i => i.message);
+  assert(messages.some(m => /level/i.test(m) && !/companion/i.test(m)), messages.join(" | "));
+  assert(!messages.some(m => /previous companion training/.test(m)), messages.join(" | "));
+  assert.equal(c.companion.training.length, 3);
 });
