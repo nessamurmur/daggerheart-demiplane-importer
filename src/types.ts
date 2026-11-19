@@ -97,6 +97,6 @@ export interface ImportReport {
   reviewedCharacter: ParsedCharacter;
   verifiedStats: Record<string, number>;
   fieldDisposition: Record<string, "imported" | "reported">;
-  status: "complete" | "failed"; cleanupFailures?: string[];
+  status: "complete" | "failed"; error?: string; cleanupFailures?: string[];
 }
 export type DocumentSource = Record<string, any>;
