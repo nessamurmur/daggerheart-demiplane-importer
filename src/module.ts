@@ -8,7 +8,6 @@ export function openImporter(): void {
   if (foundry.utils.isNewerVersion("2.10.2", game.system.version)) { ui.notifications.error("This importer requires Foundryborne 2.10.2 or newer."); return; }
   if (!wizard || !wizard.rendered) wizard = new ImportWizard();
   wizard.render({ force: true });
-  wizard.bringToFront();
 }
 
 Hooks.once("ready", () => {
