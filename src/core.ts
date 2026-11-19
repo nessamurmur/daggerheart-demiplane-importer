@@ -167,6 +167,10 @@ export function resolveEntries(character: ParsedCharacter, candidates: Candidate
   });
 }
 
+export function fitCompanionTraining(training: ParsedCharacter["companion"]["training"], level: number | null): ParsedCharacter["companion"]["training"] {
+  return Array.from({ length: Math.max(0, (level ?? 1) - 1) }, (_, i) => training[i] ?? { type: "", data: [] });
+}
+
 export function validateCharacter(c: ParsedCharacter): Issue[] {
   const issues: Issue[] = [];
   const require = (condition: unknown, message: string) => { if (!condition) issues.push({ code: "required", blocking: true, message }); };
