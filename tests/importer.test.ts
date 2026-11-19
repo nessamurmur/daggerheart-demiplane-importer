@@ -312,20 +312,22 @@ test("each Foundry preview receives its own copy of the items, because Foundry's
   assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
 });
 
-test("no Hit Point, Stress, or Evasion picks are inferred for a stat that other items change in Foundry", async () => {
-  const c = character({ level: "3", evasion: "10", hp_max: "7", "proficiency.1": "Yes", armor_name: "Heavy Mail", armor_score: "4", armor_thresholds: "7/15" });
+test("stat picks count only the PDF value above Foundry's calculation, including bonuses from other items", async () => {
+  const c = character({ level: "3", evasion: "9", hp_max: "8", "proficiency.1": "Yes", armor_name: "Heavy Mail", armor_score: "4", armor_thresholds: "7/15" });
   const { runtime } = mockRuntime();
   const preview = runtime.preview;
   runtime.preview = source => {
     const actor = preview(source);
     if (source.items?.some((i: any) => i.type === "armor")) actor.system.evasion -= 1;
+    if (source.items?.some((i: any) => i.type === "ancestry")) actor.system.resources.hitPoints.max += 1;
     return actor;
   };
   const plan = await buildPlan(c, resolveEntries(c, []), runtime);
   assert.deepEqual(selections(plan).map(s => s.type), ["hitPoint"]);
-  assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 7);
-  assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
-  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /Evasion: other items change it in Foundry \(class 10, with items 9\)/);
+  assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 8);
+  assert.equal(plan.calculatedStats["system.evasion"], 9);
+  assert.deepEqual(plan.comparisons, []);
+  assert.match(plan.issues.find(i => i.code === "level-history")!.message, /Maximum HP: Foundry’s 7 includes \+1 from items other than the class; the PDF’s higher 8 was read as level-up picks/);
 });
 
 test("two-slot picks are placed before one-slot picks fill the levels they need", async () => {

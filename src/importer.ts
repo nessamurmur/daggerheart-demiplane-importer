@@ -247,15 +247,17 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   return plan;
 }
 
-/** A level-up gain is the PDF value above Foundry's calculation, unless items other than the class change the stat in Foundry, where the PDF may count them differently. */
+/** A level-up gain is the PDF value above Foundry's full calculation. Demiplane sheets usually include the item bonuses
+ *  Foundry automates (armor features, ancestry bonuses), so other items do not suppress inference; the note shows their
+ *  share so the GM can spot a pick that is really an item bonus Foundry does not model. */
 function statEvidence(c: ParsedCharacter, baseline: any, classBaseline: any): { stats: LevelupEvidence["stats"]; notes: string[] } {
   const stats: LevelupEvidence["stats"] = {}, notes: string[] = [];
   for (const [type, , key] of STAT_PICKS) {
     const [path, label] = STAT_PATHS[key], pdf = c.stats[key];
-    const foundry = Number(getPath(baseline, path)), classOnly = Number(getPath(classBaseline, path));
     if (pdf == null) continue;
-    if (foundry === classOnly) stats[type] = { pdf, foundry };
-    else if (pdf !== foundry) notes.push(`${label}: other items change it in Foundry (class ${classOnly}, with items ${foundry}), so its level-up picks were not inferred. Review the comparison.`);
+    const foundry = Number(getPath(baseline, path)), items = foundry - Number(getPath(classBaseline, path));
+    stats[type] = { pdf, foundry };
+    if (items && pdf > foundry) notes.push(`${label}: Foundry’s ${foundry} includes ${items > 0 ? "+" : ""}${items} from items other than the class; the PDF’s higher ${pdf} was read as level-up picks.`);
   }
   return { stats, notes };
 }
