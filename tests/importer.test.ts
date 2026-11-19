@@ -113,6 +113,89 @@ test("cleanup failure is returned with the exact remaining document", async () =
   runtime.createActor = async source => { const actor = await create(source); actor.createEmbeddedDocuments = async () => { throw new Error("offline"); }; actor.delete = async () => { throw new Error("still offline"); }; return actor; };
   await assert.rejects(executePlan(plan, runtime), (e: any) => e.importReport.cleanupFailures.length === 1 && e.message.includes("Cleanup"));
 });
+
+async function reviewedPlan(c = character(), documents: Record<string, any> = {}) {
+  const mock = mockRuntime(documents);
+  const candidates = Object.entries(documents).map(([uuid, d]) => ({ uuid, name: d.name, type: d.type, pack: "Test", system: {} }));
+  const plan = await buildPlan(c, resolveEntries(c, candidates), mock.runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  for (const comparison of plan.comparisons) comparison.choice = "foundry";
+  plan.reviewed = true;
+  return { ...mock, plan };
+}
+/** A class that grants a feature, as Foundryborne's Druid grants Beastform. */
+const grantingClass = {
+  "Compendium.test.Item.class": { name: "Fixture Class", type: "class", system: { domains: ["sage"], hitPoints: 6, evasion: 10, features: [{ type: "class", item: "Compendium.test.Item.beastform" }], backgroundQuestions: [], connections: [] } },
+  "Compendium.test.Item.beastform": { name: "Beastform", type: "feature", system: { description: "<p>Transform.</p>" } }
+};
+const companion = (training: { type: string; data: string[] }[] = []) => ({ enabled: true, name: "Test companion", evasion: 12, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d6", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training });
+
+test("a feature that Foundry declines while granting a class fails and rolls back the import, and a retry creates it", async () => {
+  const { runtime, created, hooks, plan } = await reviewedPlan(character(), grantingClass);
+  hooks.preCreateItem = data => data.name !== "Beastform";
+  await assert.rejects(executePlan(plan, runtime), /Foundry declined to add “Beastform”/);
+  assert.equal(created[0].deleted, true);
+  delete hooks.preCreateItem;
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
+test("a declined community feature, linked by a bare UUID as Foundryborne communities are, fails and rolls back the import", async () => {
+  const community = {
+    "Compendium.test.Item.community": { name: "Fixture Community", type: "community", system: { features: ["Compendium.test.Item.lightfoot"] } },
+    "Compendium.test.Item.lightfoot": { name: "Lightfoot", type: "feature", system: { description: "<p>Move quietly.</p>" } }
+  };
+  const { runtime, created, hooks, plan } = await reviewedPlan(character({ community_name: "Fixture Community" }), community);
+  hooks.preCreateItem = data => data.name !== "Lightfoot";
+  await assert.rejects(executePlan(plan, runtime), /Foundry declined to add “Lightfoot”, granted by “Fixture Community”/);
+  assert.equal(created[0].deleted, true);
+  delete hooks.preCreateItem;
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
+test("a declined companion link fails the import and removes both actors", async () => {
+  const c = character(); c.companion = companion();
+  const { runtime, created, hooks, plan } = await reviewedPlan(c);
+  hooks.preUpdateActor = (_actor, changes) => !changes.system?.companion;
+  await assert.rejects(executePlan(plan, runtime), /declined to link the companion/);
+  assert.deepEqual(created.map(a => [a.type, a.deleted]), [["character", true], ["companion", true]]);
+});
+test("a declined companion training feature fails the import and removes both actors", async () => {
+  const c = character({ level: "2" }); c.companion = companion([{ type: "creatureComfort", data: [] }]);
+  const { runtime, created, hooks, plan } = await reviewedPlan(c);
+  hooks.preCreateItem = data => !data.flags?.[MODULE_ID]?.companionTraining;
+  await assert.rejects(executePlan(plan, runtime), /declined/);
+  assert.deepEqual(created.map(a => a.deleted), [true, true]);
+});
+test("a declined biography and marks update fails the import, even when the marks already match", async () => {
+  const { runtime, created, hooks, plan } = await reviewedPlan();
+  hooks.preUpdateActor = (_actor, changes) => !changes.system?.biography;
+  await assert.rejects(executePlan(plan, runtime), /declined/);
+  assert.equal(created[0].deleted, true);
+});
+test("an import whose biography and marks need no change still completes", async () => {
+  const { runtime, plan } = await reviewedPlan();
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
+test("a declined import report fails the import, and the failure report says why without naming the deleted actor", async () => {
+  const { runtime, created, hooks, plan } = await reviewedPlan();
+  hooks.preUpdateActor = (_actor, changes) => !changes.flags?.[MODULE_ID]?.report;
+  await assert.rejects(executePlan(plan, runtime), (e: any) => {
+    assert.match(e.message, /declined/);
+    assert.equal(e.importReport.status, "failed"); assert.equal(e.importReport.error, e.message);
+    assert.equal(e.importReport.actorUuid, undefined); assert.deepEqual(e.importReport.verifiedStats, []);
+    return true;
+  });
+  assert.equal(created[0].deleted, true);
+});
+test("a rollback delete that Foundry declines is reported with the actor it left behind", async () => {
+  const { runtime, hooks, plan } = await reviewedPlan();
+  hooks.preCreateItem = () => false;
+  hooks.preDeleteActor = () => false;
+  const leftover = `Actor.${plan.actorData._id}`;
+  await assert.rejects(executePlan(plan, runtime), (e: any) => {
+    assert.equal(e.importReport.cleanupFailures.length, 1); assert(e.importReport.cleanupFailures[0].includes(leftover));
+    assert(e.message.includes(`Cleanup could not remove: ${plan.actorData.name} (${leftover})`));
+    return true;
+  });
+});
 test("successful import creates classes first and reports every populated source field", async () => {
   const c = character({ extra: "unknown", "experience_name.0": "Scout", "experience_bonus.0": "0" });
   const { runtime, operations } = mockRuntime();
