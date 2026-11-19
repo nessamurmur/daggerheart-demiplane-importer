@@ -196,6 +196,16 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   assert.equal(report.verifiedStats["system.armorScore.max"], 4);
 });
 
+test("the report and source fields saved on the actor match the downloaded report key for key", async () => {
+  const c = character({ level: "1", "experience_name.0": "Scout", "experience_bonus.0": "0" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const { actor, report } = await executePlan(plan, runtime);
+  const downloaded = JSON.parse(JSON.stringify(report, null, 2));
+  assert.deepEqual(actor.flags[MODULE_ID].report, downloaded);
+  assert.deepEqual(actor.flags[MODULE_ID].sourceFields, downloaded.reviewedCharacter.source.fields);
+});
+
 /** A character whose domain cards, named "Card <index>", match compendium cards of the given levels. Other documents are added to the compendium. */
 function withCards(fields: Record<string, string>, cardLevels: number[], others: Record<string, any> = {}) {
   const documents: Record<string, any> = { ...others }, candidates: any[] = Object.entries(others).map(([uuid, d]) => ({ uuid, name: d.name, type: d.type, pack: "Test", system: {} }));
