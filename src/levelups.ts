@@ -142,18 +142,21 @@ export function inferLevelups(e: LevelupEvidence): LevelupHistory {
   const cost = (p: Pick) => Math.max(0, ...allowed(p).flatMap(t => Object.values(t.options)).filter(o => o.type === p.type).map(o => o.minCost));
   // Costly picks go first: one-slot picks spread over the levels would leave no level with two free slots.
   const order = picks.sort((a, b) => cost(b) - cost(a) || allowed(a).length - allowed(b).length);
+  // The multiclass is an item the character holds, while the other picks are read from numbers, so no count of them outweighs it: left out, it stays on offer in Foundryborne's dialog.
+  const weight = (p: Pick) => p.type === "multiclass" ? order.length : 1;
+  const total = (rest: Pick[]) => rest.reduce((n, p) => n + weight(p), 0);
   let best: (LevelupSelection | undefined)[] = order.map(p => { const [s] = moves(p); if (s) levelups[s.level].selections.push(s); return s; });
-  let most = best.filter(Boolean).length;
-  if (most < order.length) {
+  let most = total(order.filter((_, i) => best[i]));
+  if (best.includes(undefined)) {
     let budget = SEARCH_BUDGET;
-    // First fit can block a layout that holds more picks, so search every move with backtracking, keeping the layout that holds the most.
+    // First fit can block a layout that holds more picks, so search every move with backtracking, keeping the layout that holds the most weight.
     const path: (LevelupSelection | undefined)[] = [];
     const search = (i: number, placed: number) => {
-      if (placed + order.length - i - shortfall(order.slice(i)) <= most || budget-- <= 0) return;
+      if (placed + total(order.slice(i)) - shortfall(order.slice(i)) <= most || budget-- <= 0) return;
       if (i === order.length) { best = [...path]; most = placed; return; }
       for (const s of moves(order[i])) {
         levelups[s.level].selections.push(s); path.push(s);
-        search(i + 1, placed + 1);
+        search(i + 1, placed + weight(order[i]));
         path.pop(); levelups[s.level].selections.pop();
       }
       path.push(undefined); search(i + 1, placed); path.pop();
