@@ -1,8 +1,9 @@
-import { MODULE_ID, TRAITS, type Candidate, type DocumentSource, type Entry, type ImportReport, type Issue, type ParsedCharacter, type ResolvedImportPlan, type Resolution, type StatComparison } from "./types.ts";
+import { MODULE_ID, TRAITS, type Candidate, type DocumentSource, type Entry, type ImportReport, type Issue, type LevelupHistory, type ParsedCharacter, type ResolvedImportPlan, type Resolution, type StatComparison } from "./types.ts";
 import { escapeHTML, getPath, normalizeName, paragraphs, sourceFlags, validateCharacter } from "./core.ts";
+import { FEATURE_STATES, inferLevelups, STARTING_PROFICIENCY, STAT_PICKS, type LevelupEvidence } from "./levelups.ts";
 
 export interface ImportRuntime {
-  version: string; moduleVersion: string; domains: string[]; isGM: boolean;
+  version: string; moduleVersion: string; domains: string[]; isGM: boolean; levelupAuto: boolean;
   id(): string;
   getDocument(uuid: string): Promise<any>;
   preview(source: DocumentSource): any;
@@ -15,6 +16,12 @@ export const STAT_PATHS: Record<string, [string, string]> = {
   hitPoints: ["system.resources.hitPoints.max", "Maximum HP"], stress: ["system.resources.stress.max", "Maximum Stress"],
   proficiency: ["system.proficiency", "Proficiency"]
 };
+const CLASS_TYPES = ["class", "subclass"];
+/** Subclass features that grant a domain card say so only in their description. The SRD's School of Knowledge features
+ *  (Prepared, Accomplished, Brilliant) are also known by compendium identity, so a translated compendium still matches. */
+const GRANTS_DOMAIN_CARD = /take an additional domain card/gi;
+const CARD_FEATURE_SOURCES = new Set(["YS52ZGdce605wNVT", "0wCctRupJAv5hTuE", "2A0HBDxGc4gEARou"].map(id => `Compendium.daggerheart.subclasses.Item.${id}`));
+const grantsCard = (text: string) => (text.match(GRANTS_DOMAIN_CARD) ?? []).length;
 const clone = <T>(value: T): T => structuredClone(value);
 const error = (message: string): Issue => ({ code: "validation", message, blocking: true });
 const sourceOf = (document: any): DocumentSource => clone(document.toObject ? document.toObject() : document);
@@ -96,7 +103,6 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   const actorId = runtime.id();
   const sources: DocumentSource[] = [];
   const plan: ResolvedImportPlan = { character: clone(c), resolutions: clone(resolutions), actorData: {}, itemSources: sources, comparisons: [], calculatedStats: {}, issues, systemVersion: runtime.version, reviewed: false };
-  if ((c.level ?? 1) > 1 && !issues.some(i => i.code === "snapshot")) issues.push({ code: "snapshot", message: "This import is a current-state snapshot. Earlier level-up choices are unavailable; future advancement starts after the imported level." });
   for (const resolution of resolutions) {
     const e = resolution.entry;
     if (!e.include) continue;
@@ -204,7 +210,25 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   let expanded: DocumentSource[];
   try { expanded = await expandGrants(sources, runtime); }
   catch (e) { issues.push(error((e as Error).message)); return plan; }
-  const preview = runtime.preview({ ...clone(actorData), items: expanded });
+  const previewActor = (items: DocumentSource[]) => runtime.preview({ ...clone(actorData), items: clone(items) });
+  const baseline = previewActor(expanded);
+  const { stats, notes } = statEvidence(c, baseline, previewActor(expanded.filter(s => CLASS_TYPES.includes(s.type) || CLASS_TYPES.includes(s.system.granter?.type))));
+  const history = inferLevelups(levelupEvidence(c, expanded, baseline, stats, actorId));
+  actorData.system.levelData.levelups = history.levelups;
+  if (runtime.levelupAuto) {
+    for (const [trait, bonus] of Object.entries(history.bonuses.traits)) actorData.system.traits[trait].value -= bonus;
+    for (const [id, bonus] of Object.entries(history.bonuses.experiences)) actorData.system.experiences[id].value -= bonus;
+  }
+  if (c.stats.proficiency !== null) {
+    const base = c.stats.proficiency - history.bonuses.proficiency;
+    if (runtime.levelupAuto) actorData.system.proficiency = Math.max(STARTING_PROFICIENCY, base);
+    if (base < STARTING_PROFICIENCY) issues.push({ code: "proficiency-below-minimum", message: `The PDF shows Proficiency ${c.stats.proficiency}, below the minimum of ${STARTING_PROFICIENCY + history.bonuses.proficiency} for level ${c.level}. Check the PDF’s Proficiency marks.` });
+  }
+  for (const id of Object.values(history.levelups).flatMap(r => Object.keys(r.achievements.experiences))) actorData.system.experiences[id].core = true;
+  actorData.flags[MODULE_ID].incompleteHistory = history.unexplainedSlots > 0 || history.unplaced.length > 0;
+  plan.levelHistory = history;
+  if (history.summary.length) issues.push(historyIssue(history, notes, runtime.levelupAuto));
+  const preview = previewActor(expanded);
   for (const [key, [path, label]] of Object.entries(STAT_PATHS)) {
     const pdf = c.stats[key], calculated = Number(getPath(preview, path));
     if (!Number.isFinite(calculated)) { issues.push(error(`Foundry could not calculate ${label}.`)); continue; }
@@ -224,8 +248,59 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
     if (entry.armorScore != null && entry.armorScore !== s.system.armor.max) issues.push({ code: "armor-base-difference", message: `${s.name}: PDF base score ${entry.armorScore}; installed base score ${s.system.armor.max}. The total armor score is reconciled separately, including shield effects.` });
   }
   if (c.companion.enabled) plan.companionData = companionSource(c, runtime, actorId);
-  if (c.stats.proficiency === null) issues.push({ code: "default-proficiency", message: "No Proficiency was marked. Foundry’s starting Proficiency of 1 is proposed; edit it if needed." });
+  if (c.stats.proficiency === null) issues.push({ code: "default-proficiency", message: `No Proficiency was marked. Foundry’s calculated Proficiency of ${plan.calculatedStats["system.proficiency"]} is proposed; edit it if needed.` });
   return plan;
+}
+
+/** A level-up gain is the PDF value above Foundry's full calculation. Demiplane sheets usually include the item bonuses
+ *  Foundry automates (armor features, ancestry bonuses), so other items do not suppress inference; the note shows their
+ *  share so the GM can spot a pick that is really an item bonus Foundry does not model. */
+function statEvidence(c: ParsedCharacter, baseline: any, classBaseline: any): { stats: LevelupEvidence["stats"]; notes: string[] } {
+  const stats: LevelupEvidence["stats"] = {}, notes: string[] = [];
+  for (const [type, , key] of STAT_PICKS) {
+    const [path, label] = STAT_PATHS[key], pdf = c.stats[key];
+    if (pdf == null) continue;
+    const foundry = Number(getPath(baseline, path)), items = foundry - Number(getPath(classBaseline, path));
+    stats[type] = { pdf, foundry };
+    if (items && pdf > foundry) notes.push(`${label}: Foundry’s ${foundry} includes ${items > 0 ? "+" : ""}${items} from items other than the class; the PDF’s higher ${pdf} was read as level-up picks.`);
+  }
+  return { stats, notes };
+}
+
+/** Reads the items with their granted features, as Foundry will hold them. */
+function levelupEvidence(c: ParsedCharacter, items: DocumentSource[], baseline: any, stats: LevelupEvidence["stats"], actorId: string): LevelupEvidence {
+  const itemUuid = (s: DocumentSource) => `Actor.${actorId}.Item.${s._id}`;
+  const uuid = (s: DocumentSource) => s._stats.compendiumSource || s._stats.duplicateSource || itemUuid(s);
+  const multiclass = items.find(s => s.type === "class" && s.system.isMulticlass), multiclassSubclass = items.find(s => s.type === "subclass" && s.system.isMulticlass);
+  return {
+    level: c.level ?? 1, tiers: Object.values(baseline.system.levelupTiers.tiers), markedTraits: TRAITS.filter(t => c.markedTraits[t]),
+    experiences: c.experiences.map((e, i) => ({ id: `exp${i}`, name: e.name, value: e.value ?? 0 })),
+    stats,
+    proficiency: c.stats.proficiency,
+    domainCards: items.filter(s => s.flags?.[MODULE_ID]?.originalType === "domainCard").map(s => ({ name: s.name, uuid: uuid(s), itemUuid: itemUuid(s), level: s.system.level ?? s.flags[MODULE_ID].original.level ?? null })),
+    cardFeatures: [
+      ...items.filter(f => {
+        const granter = items.find(s => s.type === "subclass" && s._id === f.system.granter?.id), state = FEATURE_STATES.indexOf(f.system.granter?.identifier);
+        return granter && state > 0 && state <= (granter.system.featureState ?? 1) && (CARD_FEATURE_SOURCES.has(f._stats?.compendiumSource) || grantsCard(f.system.description ?? "") > 0);
+      }).map(f => f.name),
+      // An editable subclass has no linked features; its PDF feature text lists one entry per unlocked feature.
+      ...items.filter(s => s.type === "subclass" && !s.system.features?.length).flatMap(s =>
+        Array.from({ length: Math.min(grantsCard(s.system.description ?? ""), s.system.featureState ?? 1) }, (_, i) => `${s.name} feature ${i + 1}`))
+    ],
+    subclasses: items.filter(s => s.type === "subclass").map(s => ({ name: s.name, uuid: itemUuid(s), featureState: s.system.featureState ?? 1, isMulticlass: !!s.system.isMulticlass })),
+    multiclass: multiclass ? { name: multiclass.name, uuid: uuid(multiclass), itemUuid: itemUuid(multiclass), domain: multiclass.system.domains?.[0] ?? null, subclassUuid: multiclassSubclass ? uuid(multiclassSubclass) : null } : null
+  };
+}
+
+function historyIssue(history: LevelupHistory, notes: string[], levelupAuto: boolean): Issue {
+  return { code: "level-history", message: [
+    `Level-up history recorded from the PDF. ${history.summary.map(s => `Level ${s.level}: ${s.choices.join(", ") || "no choices identified"}.`).join(" ")}`,
+    ...notes,
+    history.subclassCards.length ? `Domain cards counted for subclass features, not as level-up picks (which card each feature took is a guess): ${history.subclassCards.join(", ")}.` : "",
+    history.unexplainedSlots ? `Option slots not identified from the PDF: ${history.unexplainedSlots}. The matching tier checkboxes stay unmarked, so a later level-up can take them.` : "",
+    history.unplaced.length ? `These choices from the PDF were not recorded: ${history.unplaced.join(", ")}.` : "",
+    levelupAuto ? "" : "Automatic level-up is off in Foundryborne, so traits, experiences, and Proficiency keep the PDF’s final values, and the stat review decides Hit Points, Stress, and Evasion. The history only marks options as taken."
+  ].filter(Boolean).join(" ") };
 }
 
 /** Additive effects remain editable and allow future equipment/level changes to take effect. */
@@ -244,7 +319,8 @@ function companionSource(c: ParsedCharacter, runtime: ImportRuntime, partnerId: 
   const dice = ["d4", "d6", "d8", "d10", "d12", "d20"], ranges = ["melee", "veryClose", "close", "far", "veryFar"];
   const damageSteps = p.training.filter(t => t.type === "vicious" && t.data[0] === "damage").length;
   const rangeSteps = p.training.filter(t => t.type === "vicious" && t.data[0] === "range").length;
-  const levelups = Object.fromEntries(p.training.map((t, i) => [String(i + 2), { achievements: { experiences: {}, domainCards: [], proficiency: 0 }, selections: [{ ...t, tier: 1, level: i + 2, optionKey: t.type, checkboxNr: p.training.slice(0, i).filter(x => x.type === t.type).length, value: t.type === "evasion" ? 2 : 1, data: t.data, features: [] }] }]));
+  // Foundryborne's companion level-up dialog has one tier, keyed 2, and numbers its checkboxes from 1.
+  const levelups = Object.fromEntries(p.training.map((t, i) => [String(i + 2), { achievements: { experiences: {}, domainCards: [], proficiency: 0 }, selections: [{ ...t, tier: 2, level: i + 2, optionKey: t.type, checkboxNr: p.training.slice(0, i).filter(x => x.type === t.type).length + 1, value: t.type === "evasion" ? 2 : 1, data: t.data, features: [] }] }]));
   return {
     _id: runtime.id(), name: p.name, type: "companion",
     system: {
@@ -264,7 +340,7 @@ export function makeReport(plan: ResolvedImportPlan, version: string): ImportRep
     moduleVersion: version, systemVersion: plan.systemVersion, sourceFile: c.source.fileName, fingerprint: c.source.fingerprint,
     createdAt: new Date().toISOString(), status: "complete",
     items: plan.resolutions.map(r => ({ name: r.entry.name, source: r.selected ?? null, kind: r.entry.kind })),
-    comparisons: clone(plan.comparisons), issues: clone(plan.issues),
+    comparisons: clone(plan.comparisons), issues: clone(plan.issues), levelHistory: clone(plan.levelHistory),
     reviewedCharacter: clone(c), verifiedStats: {},
     fieldDisposition: Object.fromEntries(Object.entries(c.source.fields).filter(([, v]) => v !== null && String(v).trim() !== "").map(([k]) => [k, c.source.handled.includes(k) && !plan.issues.some(i => i.field === k) ? "imported" : "reported"]))
   };
@@ -358,6 +434,7 @@ export function foundryRuntime(): ImportRuntime {
   const cache = new Map<string, any>();
   return {
     version: game.system.version, moduleVersion: game.modules.get(MODULE_ID).version, domains: Object.keys(CONFIG.DH.DOMAIN.allDomains()), isGM: game.user.isGM,
+    levelupAuto: !!game.system.settings.automation.levelupAuto,
     id: () => foundry.utils.randomID(),
     getDocument: async uuid => { if (!cache.has(uuid)) cache.set(uuid, await fromUuid(uuid)); return cache.get(uuid); },
     // Construction already initializes and prepares the document. Calling prepareData

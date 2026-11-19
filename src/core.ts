@@ -138,7 +138,6 @@ export function parseFields(fields: Fields, fileName = "character.pdf", fingerpr
     if (handled.has(key) || v === null || v === false || v === "" || v === "/Off" || String(v).trim() === "") continue;
     issues.push({ code: "unmapped-field", field: key, message: `${key}: ${String(v)} (retained in the import report).` });
   }
-  if ((character.level ?? 0) > 1) issues.push({ code: "snapshot", message: "This import is a current-state snapshot. The PDF does not contain a complete history of level-up choices." });
   character.source.handled = [...handled];
   return character;
 }

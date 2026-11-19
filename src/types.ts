@@ -49,12 +49,43 @@ export interface StatComparison {
   path: string; label: string; pdf: number; calculated: number;
   choice: "foundry" | "pdf" | null;
 }
+/** One option of a level tier, as Foundryborne's LevelTiers setting stores it. */
+export interface LevelOption { type: string; checkboxSelections: number; minCost: number; value?: number | null; amount?: number | null; }
+/** One tier of Foundryborne's LevelTiers setting. */
+export interface LevelTier {
+  tier: number; levels: { start: number; end: number };
+  initialAchievements: { experience?: { nr: number; modifier: number }; proficiency?: number | null };
+  availableOptions: number; domainCardByLevel: number;
+  options: Record<string, LevelOption>;
+}
+/** A taken level-up checkbox group, in the shape Foundryborne's Actor#levelUp writes. */
+export interface LevelupSelection {
+  tier: number; level: number; optionKey: string; type: string; checkboxNr: number; minCost: number;
+  value?: number; amount?: number; data: string[]; secondaryData?: Record<string, string>; itemUuid?: string;
+}
+export interface LevelupRecord {
+  achievements: { experiences: Record<string, { name: string; modifier: number }>; domainCards: { uuid: string; itemUuid: string }[]; proficiency: number };
+  selections: LevelupSelection[];
+}
+export interface LevelupHistory {
+  levelups: Record<string, LevelupRecord>;
+  /** What Foundryborne adds from this history when automatic level-up is on. */
+  bonuses: { traits: Partial<Record<Trait, number>>; proficiency: number; experiences: Record<string, number> };
+  summary: { level: number; choices: string[] }[];
+  /** Option slots, counted by cost, that no PDF evidence explains. */
+  unexplainedSlots: number;
+  /** Choices the PDF implies that could not be recorded, each with its reason. */
+  unplaced: string[];
+  /** Domain cards that subclass features grant, each with its feature. Level-up history never holds them. */
+  subclassCards: string[];
+}
 export interface ResolvedImportPlan {
   character: ParsedCharacter; resolutions: Resolution[];
   actorData: Record<string, any>; companionData?: Record<string, any>;
   itemSources: Record<string, any>[];
   comparisons: StatComparison[]; issues: Issue[];
   calculatedStats: Record<string, number>;
+  levelHistory?: LevelupHistory;
   systemVersion: string; reviewed: boolean;
 }
 export interface ImportReport {
@@ -62,6 +93,7 @@ export interface ImportReport {
   createdAt: string; actorUuid?: string; companionUuid?: string;
   items: { name: string; source: string | null; kind: string }[];
   comparisons: StatComparison[]; issues: Issue[];
+  levelHistory?: LevelupHistory;
   reviewedCharacter: ParsedCharacter;
   verifiedStats: Record<string, number>;
   fieldDisposition: Record<string, "imported" | "reported">;
