@@ -193,7 +193,7 @@ export function validateCharacter(c: ParsedCharacter): Issue[] {
     require(Number.isInteger(p.stress) && p.stress >= 0 && p.stress <= p.stressMax!, "Companion marked Stress must fit its maximum.");
     require(p.attackName.trim(), "Enter the companion’s attack name.");
     p.experiences.forEach(e => require(e.name.trim() && Number.isInteger(e.value), "Enter both companion experiences and their bonuses."));
-    require(p.training.length === (c.level ?? 1) - 1, `Record ${Math.max(0, (c.level ?? 1) - 1)} previous companion training choices so they are not granted again.`);
+    if (Number.isInteger(c.level) && c.level! >= 1 && c.level! <= 10) require(p.training.length === c.level! - 1, `Record ${c.level! - 1} previous companion training choices so they are not granted again.`);
     const trainingLimits: Record<string, number> = { experience: 3, hope: 1, creatureComfort: 1, armored: 1, vicious: 3, stress: 3, bonded: 1, evasion: 3 };
     for (const t of p.training) {
       require(t && t.type in trainingLimits, "Choose a valid companion training option for every previous level.");

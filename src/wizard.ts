@@ -143,7 +143,8 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
       const value = input.value;
       this.character!.companion.training[Number(input.dataset.training)] = { type: ["damage", "range"].includes(value) ? "vicious" : value, data: ["damage", "range"].includes(value) ? [value] : [] };
     });
-    this.character.companion.training = fitCompanionTraining(this.character.companion.training, this.character.level);
+    const level = this.character.level;
+    if (this.character.companion.enabled && Number.isInteger(level) && level! >= 1 && level! <= 10) this.character.companion.training = fitCompanionTraining(this.character.companion.training, level);
     for (const entry of this.character.entries.filter(e => e.kind === "subclass")) {
       entry.isMulticlass = !!this.character.entries.find(e => e.kind === "class" && e.name === entry.className)?.isMulticlass;
     }

@@ -72,3 +72,14 @@ test("companion training follows a level change, keeping choices for the levels 
   c.level = 1;
   assert.deepEqual(fitCompanionTraining(c.companion.training, c.level), []);
 });
+
+test("a blank level asks only for the level, and keeps recorded companion training", () => {
+  const c = character({ level: "4" });
+  c.companion.enabled = true;
+  c.companion.training = [{ type: "evasion", data: [] }, { type: "hope", data: [] }, { type: "stress", data: [] }];
+  c.level = null;
+  const messages = validateCharacter(c).map(i => i.message);
+  assert(messages.some(m => /level/i.test(m) && !/companion/i.test(m)), messages.join(" | "));
+  assert(!messages.some(m => /previous companion training/.test(m)), messages.join(" | "));
+  assert.equal(c.companion.training.length, 3);
+});
