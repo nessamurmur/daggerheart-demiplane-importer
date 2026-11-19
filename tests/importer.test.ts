@@ -2,8 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
-import { MODULE_ID } from "../src/types.ts";
-import { character, mockRuntime } from "./helpers.ts";
+import { MODULE_ID, TRAITS } from "../src/types.ts";
+import { character, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
+
+const selections = (plan: { actorData: any }): any[] => Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => r.selections);
+/** What Foundryborne's level-up dialog reads to mark a checkbox as taken: tier, option, and checkbox number, per level. */
+const taken = (plan: { actorData: any }) => Object.fromEntries(Object.entries<any>(plan.actorData.system.levelData.levelups).map(([level, r]) => [level, r.selections.map((s: any) => `t${s.tier} ${s.optionKey} #${s.checkboxNr}${s.type === "domainCard" ? "" : ` ${s.data.join("+")}`}`.trim()).sort()]));
 
 test("planning is read-only and stat decisions are required", async () => {
   const c = character({ evasion: "8" });
@@ -70,7 +74,9 @@ test("multiclass links and feature selection are explicit", async () => {
   const other = plan.itemSources.find(s => s.name === "Other Class")!, sub = plan.itemSources.find(s => s.name === "Other Path")!;
   assert.equal(other.system.isMulticlass, true);
   assert.equal(sub.system.linkedClass, `Actor.${plan.actorData._id}.Item.${other._id}`);
-  assert.deepEqual(plan.actorData.system.levelData.levelups, {});
+  const multiclass = selections(plan).find(s => s.type === "multiclass");
+  assert.deepEqual({ level: multiclass?.level, tier: multiclass?.tier, checkboxNr: multiclass?.checkboxNr, minCost: multiclass?.minCost, data: multiclass?.data, itemUuid: multiclass?.itemUuid, secondaryData: multiclass?.secondaryData },
+    { level: 5, tier: 3, checkboxNr: 1, minCost: 2, data: [sub.system.linkedClass], itemUuid: sub.system.linkedClass, secondaryData: { domain: "sage", subclass: `Actor.${plan.actorData._id}.Item.${sub._id}` } });
   assert.equal(plan.actorData.system.levelData.level.current, plan.actorData.system.levelData.level.changed);
 });
 test("mixed ancestry uses only the selected primary and secondary grants", async () => {
@@ -178,4 +184,86 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   assert.equal(report.reviewedCharacter.source.fields.name, "Source name");
   assert.equal(report.fieldDisposition.ancestry_name, "reported");
   assert.equal(report.verifiedStats["system.armorScore.max"], 4);
+});
+
+function levelFourRogue() {
+  const fields: Record<string, string> = {
+    level: "4", agility: "2", strength: "0", finesse: "3", instinct: "1", presence: "2", knowledge: "1", strength_marked: "Yes", presence_marked: "Yes",
+    hp_max: "7", stress_max: "6", evasion: "10", "proficiency.1": "Yes",
+    "experience_name.0": "Silver Tongued", "experience_bonus.0": "3", "experience_name.1": "Quick Hands", "experience_bonus.1": "3", "experience_name.2": "Tech Savvy", "experience_bonus.2": "2"
+  };
+  const documents: Record<string, any> = {}, candidates: any[] = [];
+  [1, 1, 1, 2, 3, 4].forEach((level, i) => {
+    const uuid = `Compendium.test.Item.card${i}`, name = `Card ${i}`;
+    fields[`domain_card_name.0.${i}`] = name; fields[`domain_card_domain.0.${i}`] = "sage";
+    documents[uuid] = { name, type: "domainCard", system: { domain: "sage", level, type: "ability", recallCost: 0, inVault: true } };
+    candidates.push({ uuid, name, type: "domainCard", pack: "Test", system: { domain: "sage" } });
+  });
+  const c = character(fields);
+  return { c, resolutions: resolveEntries(c, candidates), ...mockRuntime(documents) };
+}
+const levelFourTaken = { 2: ["t2 hitPoint #1", "t2 trait #1 strength+presence"], 3: ["t2 domainCard #1", "t2 experience #1 exp0+exp1"], 4: [] };
+
+test("higher-level imports record level-up history that Foundry replays to the PDF's stats", async () => {
+  const { c, resolutions, runtime } = levelFourRogue();
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  assert.deepEqual(taken(plan), levelFourTaken);
+  const levelups = plan.actorData.system.levelData.levelups, none = { proficiency: 0, experiences: {}, domainCards: [] };
+  assert.deepEqual(levelups[2].achievements, { proficiency: 1, experiences: { exp2: { name: "Tech Savvy", modifier: 2 } }, domainCards: [] });
+  assert.deepEqual([levelups[3].achievements, levelups[4].achievements], [none, none]);
+  const card = selections(plan).find(s => s.type === "domainCard");
+  const item = plan.itemSources.find(s => `Actor.${plan.actorData._id}.Item.${s._id}` === card.itemUuid);
+  assert.equal(item?.type, "domainCard");
+  assert.deepEqual([card.data, card.secondaryData], [[item._stats.compendiumSource], { limit: "4" }]);
+  assert.deepEqual(plan.comparisons, []);
+  assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 7);
+  assert.equal(plan.calculatedStats["system.proficiency"], 2);
+  const history = plan.issues.find(i => i.code === "level-history");
+  assert(history && !history.blocking);
+  plan.reviewed = true;
+  const { actor, report } = await executePlan(plan, runtime);
+  assert.deepEqual(TRAITS.map(t => actor.system.traits[t].value), [2, 0, 3, 1, 2, 1]);
+  assert(actor.system.traits.strength.tierMarked && actor.system.traits.presence.tierMarked);
+  assert.deepEqual(Object.values<any>(actor.system.experiences).map(e => e.value), [3, 3, 2]);
+  assert.equal(report.levelHistory?.unexplainedSlots, 2);
+});
+
+test("with automatic level-up off, the history is recorded and the PDF's final values are stored", async () => {
+  const { c, resolutions, runtime } = levelFourRogue();
+  runtime.levelupAuto = false;
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(taken(plan), levelFourTaken);
+  const s = plan.actorData.system;
+  assert.deepEqual([s.traits.strength.value, s.traits.presence.value, s.proficiency, ...Object.values<any>(s.experiences).map(e => e.value)], [0, 2, 2, 3, 3, 2]);
+  assert.deepEqual(plan.comparisons.map(x => [x.path, x.pdf, x.calculated]), [["system.resources.hitPoints.max", 7, 6]]);
+});
+
+test("tier 3 history respects each tier's options, checkbox limits, and level slots", async () => {
+  const c = character({ level: "6", hp_max: "9", "proficiency.1": "Yes", "proficiency.2": "Yes", "proficiency.3": "Yes", subclass_name_1: "Fixture Path", subclass_class_1: "Fixture Class", subclass_specialization_1: "Yes" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  assert.deepEqual(selections(plan).map(s => `t${s.tier} ${s.optionKey} #${s.checkboxNr}`).sort(), ["t2 hitPoint #1", "t2 hitPoint #2", "t3 hitPoint #1", "t3 proficiency #1", "t3 subclass #1"]);
+  const levelups = plan.actorData.system.levelData.levelups;
+  assert.deepEqual(Object.keys(levelups), ["2", "3", "4", "5", "6"]);
+  for (const [level, record] of Object.entries<any>(levelups)) {
+    assert(record.selections.reduce((n: number, s: any) => n + s.minCost, 0) <= 2, `level ${level} spends more than its two option slots`);
+    for (const s of record.selections) assert(s.level === Number(level) && s.level >= LEVEL_TIERS.find(t => t.tier === s.tier)!.levels.start, `level ${level} holds a tier ${s.tier} option`);
+  }
+  const sub = plan.itemSources.find(s => s.type === "subclass")!, subclass = selections(plan).find(s => s.type === "subclass");
+  assert.deepEqual([subclass.data, subclass.secondaryData], [[`Actor.${plan.actorData._id}.Item.${sub._id}`], { featureState: "2", isMulticlass: "false" }]);
+  assert.equal(selections(plan).find(s => s.type === "proficiency").minCost, 2);
+  assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 9);
+  assert.equal(plan.calculatedStats["system.proficiency"], 4);
+  assert.deepEqual(plan.comparisons, []);
+});
+
+test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {
+  const c = character({ hp_max: "7", agility_marked: "Yes" });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(plan.actorData.system.levelData.levelups, {});
+  assert(!plan.issues.some(i => i.code === "level-history"));
+  assert.deepEqual(plan.comparisons.map(x => [x.path, x.pdf, x.calculated]), [["system.resources.hitPoints.max", 7, 6]]);
 });
