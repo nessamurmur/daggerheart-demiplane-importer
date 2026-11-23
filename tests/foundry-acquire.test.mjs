@@ -72,16 +72,55 @@ with zipfile.ZipFile(slip_path, "w") as archive:
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "daggerheart/system.json"), "utf8")).version, "2.10.2");
 });
 
-test("fetch-foundry fails before any login when the account secrets are missing", () => {
-  const dest = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "dpi-fetch-")), "foundry.zip");
-  const result = spawnSync("python3", [download, "fetch-foundry", dest, "14.370"], {
-    encoding: "utf8",
-    env: { ...process.env, FOUNDRY_USERNAME: "", FOUNDRY_PASSWORD: CANARY, FOUNDRY_LICENSE_KEY: CANARY },
-  });
+test("cache-ok rejects a file that is not the pinned Node archive", () => {
+  const dest = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "dpi-cache-")), "FoundryVTT-Node-14.370.zip");
+  fs.writeFileSync(dest, "not the archive");
+  const result = spawnSync("python3", [download, "cache-ok", dest], { encoding: "utf8" });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Missing Runtime Secret FOUNDRY_USERNAME\./);
-  assert.equal(`${result.stdout}${result.stderr}`.includes(CANARY), false);
-  assert.equal(fs.existsSync(dest), false);
+  assert.match(result.stderr, /FoundryVTT-Node-14.370.zip/);
+  assert.match(result.stderr, /150182237/);
+  assert.equal(result.stderr.includes("FOUNDRY_USERNAME"), false);
+});
+
+test("Node archive extract uses main.js at the zip root", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dpi-node-zip-"));
+  const zip = path.join(dir, "FoundryVTT-Node-14.370.zip");
+  const build = spawnSync("python3", ["-c", `
+import json, sys, zipfile
+zip_path = sys.argv[1]
+with zipfile.ZipFile(zip_path, "w") as archive:
+    archive.writestr("main.js", "console.log('foundry')\\n")
+    archive.writestr("package.json", json.dumps({"release": {"generation": 14, "build": 370}}))
+`, zip], { encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  const dest = path.join(dir, "app");
+  const extracted = spawnSync("python3", [download, "extract-foundry", zip, dest, "14.370"], { encoding: "utf8" });
+  assert.equal(extracted.status, 0, extracted.stderr);
+  assert.equal(fs.readFileSync(path.join(dest, "resources/app/main.js"), "utf8").includes("foundry"), true);
+  const electron = path.join(dir, "electron.zip");
+  spawnSync("python3", ["-c", `
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as archive:
+    archive.writestr("resources/app/main.js", "nope\\n")
+    archive.writestr("resources/app/package.json", "{}")
+`, electron], { encoding: "utf8" });
+  const rejected = spawnSync("python3", [download, "extract-foundry", electron, path.join(dir, "electron-app"), "14.370"], { encoding: "utf8" });
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /main.js and package.json at the archive root/);
+});
+
+test("timed URL helper does not echo the query string", () => {
+  const query = "X-Amz-Signature=super-secret-query";
+  const result = spawnSync("bash", ["scripts/foundry-cache-fetch.sh", `https://127.0.0.1:9/foundry.zip?${query}`], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, FOUNDRY_VERIFY_ROOT: fs.mkdtempSync(path.join(os.tmpdir(), "dpi-fetch-")) },
+  });
+  const output = `${result.stdout}${result.stderr}`;
+  assert.notEqual(result.status, 0);
+  assert.equal(output.includes(query), false);
+  assert.equal(output.includes("super-secret-query"), false);
+  assert.match(output, /URL was not printed/);
 });
 
 test("redact removes every secret, including ones shorter than 8 characters", () => {
