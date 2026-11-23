@@ -13,7 +13,18 @@ test("parses checkbox marks, not parent fields or empty cards", () => {
   assert.equal(c.resources.hitPoints, 1); assert.equal(c.resources.armor, 1);
   assert.equal(c.entries.filter(e => e.kind === "domainCard").length, 1);
   assert.equal(c.entries.find(e => e.kind === "domainCard")!.recallCost, 0);
-  assert.equal(c.entries.find(e => e.kind === "domainCard")!.inVault, true);
+  assert.equal(c.entries.find(e => e.kind === "domainCard")!.inVault, false);
+});
+test("a marked domain card box puts the card in the loadout, and an unmarked card goes to the vault", () => {
+  const c = character({ "domain_card_name.0.0": "Kept card", "domain_card_archived.0.0": "Yes", "domain_card_name.0.1": "Vaulted card", "domain_card_archived.0.1": "Off", "domain_card_archived.0.2": "Yes" });
+  assert.deepEqual(c.entries.filter(e => e.kind === "domainCard").map(e => [e.name, e.inVault]), [["Kept card", false], ["Vaulted card", true]]);
+  assert(!c.issues.some(i => i.code === "loadout-unmarked"));
+});
+test("a sheet that marks no domain card proposes every card for the loadout and tells the GM", () => {
+  const c = character({ "domain_card_name.0.0": "First card", "domain_card_archived.0.0": "Off", "domain_card_name.0.1": "Second card", "domain_card_archived.0.1": "Off", "domain_card_archived.0.2": "Yes" });
+  assert.deepEqual(c.entries.filter(e => e.kind === "domainCard").map(e => e.inVault), [false, false]);
+  const notice = c.issues.find(i => i.code === "loadout-unmarked");
+  assert(notice && !notice.blocking);
 });
 test("warns on armor placeholders and inventory duplication without guessing quantities", () => {
   const c = character({ armor_name: "Test Armor", armor_thresholds: "{0} / {1}", inventory: "0Teststaff, Test Armor, Unfamiliar token" });

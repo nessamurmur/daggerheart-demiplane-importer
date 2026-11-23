@@ -101,6 +101,6 @@ export interface ImportReport {
   reviewedCharacter: Omit<ParsedCharacter, "source"> & { source: Omit<ParsedCharacter["source"], "fields"> & { fields: FieldPairs } };
   verifiedStats: [path: string, value: number][];
   fieldDisposition: [field: string, disposition: "imported" | "reported"][];
-  status: "complete" | "failed"; cleanupFailures?: string[];
+  status: "complete" | "failed"; error?: string; cleanupFailures?: string[];
 }
 export type DocumentSource = Record<string, any>;

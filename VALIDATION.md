@@ -11,7 +11,7 @@ Validated on 2026-09-19 with the pinned dependencies in `pnpm-lock.yaml`:
 - TypeScript type checking passes.
 - 32 tests pass when both private PDFs and the external Foundryborne 2.10.2 reference checkout are present, including stable manifest URLs, version-specific downloads, rejection of mismatched release versions, and constructor preparation regression coverage.
 - Both original PDFs are extracted through PDF.js, including page annotations outside the canonical field tree. No sample PDFs or upstream game content are included in the distribution.
-- Jen: all nine content entries resolve uniquely against the upstream catalog. Traits, experiences, zero values, Hope checkboxes, equipped weapons, archived cards, and malformed armor thresholds are checked. The mapping preserves Leather Armor's base score 3 and exactly one native Round Shield armor effect.
+- Jen: all nine content entries resolve uniquely against the upstream catalog. Traits, experiences, zero values, Hope checkboxes, equipped weapons, domain cards in the loadout, and malformed armor thresholds are checked. The mapping preserves Leather Armor's base score 3 and exactly one native Round Shield armor effect.
 - Ex Ampleton: missing level and experience bonuses remain missing until review; all six zero traits survive. Repeated inventory references are detected. Summoner, Necromancy, Power Through Pain, and Blood Spike remain unmatched; Twisted Dagger resolves to SRD content.
 - Synthetic tests cover the level-up history inferred for higher-level characters, multiclass/subclass links, mixed ancestry grants, companion training, ambiguous sources, inaccessible packs, malformed PDF input, unknown domains, HTML escaping, GM restrictions, and rollback/cleanup errors.
 - The importer checks every resulting stat against its preview, even when the PDF initially agreed, so a doubled shield bonus causes rollback. Tests also verify that the report retains source values, review edits, exclusions, and verified numbers.
@@ -39,7 +39,7 @@ On 2026-09-19, version 0.1.2 was published through GitHub Actions. The public la
 The live Jen import is awaiting browser file access: Chrome rejected selecting the local PDF through `fileChooser.setFiles` with “Not allowed.” No test actors were created by this attempt, and the world is running. Enable “Allow access to file URLs” for Chrome's ChatGPT browser extension, then complete these checks:
 
 1. Enable the module and confirm the Actors directory button and all wizard tabs render correctly.
-2. Import **[Import test] Jen**, using **0** for Folk hero. Preserve PDF Evasion **8**; confirm armor **4**, thresholds **7/14**, one shield bonus, both domain cards in the vault, and HP/Stress/Hope controls.
+2. Import **[Import test] Jen**, using **0** for Folk hero. Preserve PDF Evasion **8**; confirm armor **4**, thresholds **7/14**, one shield bonus, both domain cards in the loadout, and HP/Stress/Hope controls.
 3. Import **[Import test] Ex Ampleton**, using level **1** and **0** for both missing experience bonuses. Review `0Greatstaff` as an inventory export artifact. Confirm unmatched playtest items are editable and all zero traits survive.
 4. Inspect actual source UUIDs, class/subclass grants, feature links, and copied attacks/actions/effects. Activate a matched attack and ability. Check equipped/unequipped behavior without duplicating armor bonuses.
 5. Reload and reopen both actors. Verify resources remain editable and reports survive reload.

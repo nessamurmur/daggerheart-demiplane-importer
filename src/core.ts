@@ -78,11 +78,18 @@ export function parseFields(fields: Fields, fileName = "character.pdf", fingerpr
   const ancestryPrimary = str("ancestry_feature_1"), ancestrySecondary = str("ancestry_feature_2");
   add("ancestry", str("ancestry_name"), [ancestryPrimary, ancestrySecondary].filter(Boolean).join("\n\n"), ["ancestry_name", "ancestry_feature_1", "ancestry_feature_2"], { ancestryFeatures: { primary: ancestryPrimary, secondary: ancestrySecondary } });
   add("community", str("community_name"), str("community_feature"), ["community_name", "community_feature"]);
+  // Despite its name, Demiplane marks domain_card_archived on loadout cards and clears it on vault cards.
+  const firstCard = entries.length;
   for (const key of Object.keys(fields).filter(k => /^domain_card_name\.\d+\.\d+$/.test(k))) {
     const suffix = key.slice("domain_card_name".length);
     const cardName = str(key), description = str(`domain_card_feature${suffix}`), domain = str(`domain_card_domain${suffix}`).toLowerCase();
-    const cardType = str(`domain_card_type${suffix}`).toLowerCase(), recallCost = num(`domain_card_recall${suffix}`), inVault = bool(`domain_card_archived${suffix}`);
+    const cardType = str(`domain_card_type${suffix}`).toLowerCase(), recallCost = num(`domain_card_recall${suffix}`), inVault = !bool(`domain_card_archived${suffix}`);
     add("domainCard", cardName, description, [key, `domain_card_feature${suffix}`, `domain_card_domain${suffix}`, `domain_card_type${suffix}`, `domain_card_recall${suffix}`, `domain_card_archived${suffix}`], { domain, cardType, recallCost, inVault, level: null });
+  }
+  const cards = entries.slice(firstCard);
+  if (cards.length && cards.every(e => e.inVault)) {
+    for (const card of cards) card.inVault = false;
+    issues.push({ code: "loadout-unmarked", message: `The PDF marks none of its ${cards.length} domain cards as in the loadout, so all are proposed for the loadout. Check “In vault” on the Content tab for any card that belongs in the vault.` });
   }
   for (const slot of ["primary", "secondary", "inventory0", "inventory1"]) {
     const inventory = slot.startsWith("inventory"), index = slot.at(-1);
