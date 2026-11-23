@@ -2,7 +2,7 @@
 
 Who this is for: whoever opens a PR here (a Cursor cloud agent, a Cursor session on NJ's machine, or NJ). The reviewer checks this list; a PR that meets it gets a verdict on the first pass. Read it before you start, not after you finish.
 
-A PR is merge-eligible only when all three hold for its current head SHA: the reviewer's latest verdict is `SATISFIED`, CI is green, and the evidence below is posted. "Tests pass" with no detail is not evidence.
+A PR is merge-eligible only when all of these hold for its current head SHA: the latest `<!-- dpi-review:v1 ... -->` comment has `verdict` `SATISFIED` and `head_sha` equal to that head, the label is `review:satisfied`, CI is green, and the evidence below is posted. The review itself is a `COMMENT` from `nessamurmur`, because that account also opens the pull requests and GitHub will not accept `APPROVE` or `REQUEST_CHANGES`. "Tests pass" with no detail is not evidence.
 
 ## 1. Classify the change
 

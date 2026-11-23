@@ -23,4 +23,4 @@ NJ initiates features. Do not add features nobody asked for. Fixes to known defe
 
 ## Review
 
-A separate bot GitHub account posts the verdict. It is not the repository owner's account, so the verdict can be a real `APPROVE` or `REQUEST_CHANGES` review. That account is not set up yet. The machine-readable `<!-- dpi-review:v1 ... -->` comment, including `head_sha`, is still required. Follow `docs/review/reviewer.md`.
+Verdicts are posted from the repository owner's account (`nessamurmur`), which also authors the pull requests. GitHub will not accept `APPROVE` or `REQUEST_CHANGES` on those pull requests. The reviewer posts a `COMMENT` review, one marker comment `<!-- dpi-review:v1 ... -->` with `verdict` and `head_sha`, and exactly one `review:*` label. That marker and label are what the merge rule reads. Follow `docs/review/reviewer.md`.

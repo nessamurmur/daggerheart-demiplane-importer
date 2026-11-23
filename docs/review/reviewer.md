@@ -114,14 +114,10 @@ Post, in this order:
 
    `evidence` is `ok | missing | stale`; `readiness` is `not_run | pass | findings`. `head_sha` is the PR head you reviewed. A verdict is valid only while it equals the PR's current head SHA.
 2. Under the block, at most: Verdict line; "Why" in 2 to 4 lines; BLOCKERs; SHOULDs; "Evidence I checked" (E1 to E5, one line each); "Not verified" (what you could not check, including that live evidence is self-reported); "User-facing strings changed" (if any).
-3. A GitHub review from the reviewer bot. That bot is a separate GitHub account (not set up yet), not the repository owner. Submit a real review event. Map the verdict:
-   - `SATISFIED` → `APPROVE`
-   - `CHANGES_REQUESTED` and `NEEDS_EVIDENCE` → `REQUEST_CHANGES`
-   - `NEEDS_HUMAN` → `COMMENT`
-   The review carries only the inline comments, one per finding, each starting with its id and severity. Keep the marker comment from step 1, including `head_sha`. The review event does not replace that comment. The Engineering Lead compares `head_sha` in the marker to the PR head.
-4. Set exactly one label: `review:satisfied`, `review:changes-requested`, `review:needs-evidence`, or `review:needs-human` (remove the other three). Create the label if it is missing.
+3. A GitHub review of type `COMMENT`, posted from the repository owner's account (`nessamurmur`). That account also authors the pull requests, so GitHub will not accept `APPROVE` or `REQUEST_CHANGES`. Do not submit either. The review carries only the inline comments, one per finding, each starting with its id and severity. The marker comment from step 1 carries `verdict` and `head_sha`. The review event does not replace that comment.
+4. Set exactly one label: `review:satisfied`, `review:changes-requested`, `review:needs-evidence`, or `review:needs-human` (remove the other three). Create the label if it is missing. The label matches the verdict in the marker comment.
 
-Do not merge, close, or push. Do not approve on behalf of NJ or the Engineering Lead. The bot's own `APPROVE` or `REQUEST_CHANGES` is the review. The Engineering Lead merges when: latest marker comment has `verdict=SATISFIED` and `head_sha` equals the PR head; CI is green for that SHA; `evidence` is `ok`.
+Do not merge, close, or push. The merge rule reads the marker comment and the `review:*` label. The Engineering Lead merges when the latest marker has `verdict=SATISFIED`, its `head_sha` equals the PR head, the label is `review:satisfied`, CI is green for that SHA, and `evidence` is `ok`.
 
 ## 7. Tone
 
