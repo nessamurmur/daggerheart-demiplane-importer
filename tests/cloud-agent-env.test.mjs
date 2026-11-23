@@ -23,6 +23,11 @@ test("environment config parses and does not boot Foundry", () => {
   const dockerfile = fs.readFileSync(path.join(root, ".cursor/Dockerfile"), "utf8");
   assert.match(dockerfile, /24\.22\.3/);
   assert.match(dockerfile, /google-chrome-stable/);
+  const install = fs.readFileSync(path.join(root, "scripts/cloud-agent-install.sh"), "utf8");
+  assert.match(install, /verify-foundry-importer\/scripts/);
+  assert.match(install, /package-lock\.json/);
+  assert.match(install, /skipping harness install/);
+  assert.doesNotMatch(install, /foundry-download\.py/);
   const syntax = spawnSync("bash", ["-n", "scripts/cloud-agent-install.sh"], { cwd: root, encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
 });

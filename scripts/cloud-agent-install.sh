@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Idempotent cloud-agent install: Node 24, pnpm, repo deps, the verify harness,
-# Chrome, and the public Foundryborne 2.10.2 zip. Does not download Foundry VTT
-# and does not start a server (one licence, one session; that is `foundry-verify-server.sh up`).
+# Idempotent cloud-agent install: Node 24, pnpm, repo deps, Chrome, and the
+# public Foundryborne 2.10.2 zip. Does not download Foundry VTT and does not
+# start a server. The verify skill is optional: this script is valid on main,
+# where that skill is not present yet.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -76,7 +77,13 @@ hash -r
 
 # pnpm 11 refuses to replace a modules directory installed by an older pnpm unless this is set.
 CI=true pnpm install --frozen-lockfile
-npm ci --prefix .claude/skills/verify-foundry-importer/scripts
+# Playwright for the verify skill. That skill is not on main until its PR merges.
+harness=".claude/skills/verify-foundry-importer/scripts"
+if [ -f "$harness/package-lock.json" ]; then
+  npm ci --prefix "$harness"
+else
+  echo "verify skill not in this checkout; skipping harness install"
+fi
 
 if [ ! -x /usr/bin/google-chrome ]; then
   curl -fsSL -o /tmp/google-chrome-stable.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
@@ -87,11 +94,30 @@ fi
 
 mkdir -p "$ROOT/cache"
 zip="$ROOT/cache/foundryborne-${FOUNDRYBORNE_VERSION}.zip"
-if ! python3 "$REPO/scripts/foundry-download.py" system-ok "$zip" "$FOUNDRYBORNE_VERSION"; then
+# Inlined so this checkout does not depend on a later pull request.
+system_ok() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys, zipfile
+path, version = sys.argv[1:]
+try:
+    archive = zipfile.ZipFile(path)
+    name = next(
+        info.filename
+        for info in archive.infolist()
+        if info.filename.replace("\\", "/").rstrip("/").endswith("system.json")
+        and ".." not in info.filename.replace("\\", "/").split("/")
+    )
+    meta = json.loads(archive.read(name))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if meta.get("id") == "daggerheart" and meta.get("version") == version else 1)
+PY
+}
+if ! system_ok "$zip" "$FOUNDRYBORNE_VERSION"; then
   echo "downloading Foundryborne ${FOUNDRYBORNE_VERSION}"
   curl -fsSL -o "${zip}.partial" "$FOUNDRYBORNE_URL"
   mv "${zip}.partial" "$zip"
-  python3 "$REPO/scripts/foundry-download.py" system-ok "$zip" "$FOUNDRYBORNE_VERSION" \
+  system_ok "$zip" "$FOUNDRYBORNE_VERSION" \
     || { echo "Foundryborne zip is not daggerheart ${FOUNDRYBORNE_VERSION}" >&2; exit 1; }
 fi
 
