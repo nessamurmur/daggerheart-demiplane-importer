@@ -1,4 +1,5 @@
-import { parseFields } from "../src/core.ts";
+import { isDeepStrictEqual } from "node:util";
+import { getPath, parseFields, setPath } from "../src/core.ts";
 import type { ImportRuntime } from "../src/importer.ts";
 import type { DocumentSource, ParsedCharacter } from "../src/types.ts";
 
@@ -44,10 +45,13 @@ export function companionCheckboxesTaken(levelups: Record<string, any>): string[
   return Object.entries(COMPANION_OPTIONS).flatMap(([key, count]) => Array.from({ length: count }, (_, i) => i + 1).filter(n => selected[2][key]?.[n]).map(n => `${key} #${n}`));
 }
 
-function setPath(target: any, path: string, value: unknown): void {
-  const parts = path.split("."); let obj = target;
-  for (const k of parts.slice(0, -1)) obj = obj[k] ??= {};
-  obj[parts.at(-1)!] = value;
+/** Mirrors Foundryborne's Item.prepareGrantedItems: each linked feature joins its granter's creation. */
+function grantedFeatures(granter: DocumentSource, documents: Record<string, DocumentSource>): DocumentSource[] {
+  return (granter.system?.features ?? []).map((link: any) => typeof link === "string" ? link : typeof link?.item === "string" ? link.item : link?.item?.uuid).filter(Boolean).map((uuid: string) => ({
+    ...structuredClone(documents[uuid]), _id: `granted-${uuid}`,
+    _stats: { compendiumSource: uuid.startsWith("Compendium.") ? uuid : null, duplicateSource: uuid.startsWith("Compendium.") ? null : uuid },
+    system: { ...structuredClone(documents[uuid].system), granter: { id: granter._id, type: granter.type } }
+  }));
 }
 
 /** Mirrors Foundry 14's expandObject, which document updates and loads apply inside every flag: each dotted key in a plain object, at any depth, becomes nested objects. Returns a copy, as Foundry stores one. */
@@ -62,28 +66,46 @@ function expandObject(value: any): any {
 export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
   let serial = 0;
   const created: any[] = [], operations: string[] = [];
+  /** Like Foundry's pre-operation hooks: one returning false declines that document's write, and nothing throws. */
+  const hooks: Record<string, (...args: any[]) => boolean | void> = {};
+  const allowed = (event: string, ...args: any[]) => hooks[event]?.(...args) !== false;
   const runtime: ImportRuntime = {
     version: "2.10.2", moduleVersion: "test", domains: ["sage", "arcana"], isGM: true,
-    levelupAuto: true,
+    levelupAuto: true, maxLoadout: 5,
     id: () => String(++serial).padStart(16, "0"), localize: key => key,
     getDocument: async uuid => documents[uuid] ? { ...documents[uuid], toObject: () => structuredClone(documents[uuid]) } : null,
     // A deterministic stub isolates planning/transaction tests. Live Foundry verifies actual preparation.
     preview: source => {
-      const system = { ...structuredClone(source.system), evasion: 10, armorScore: { max: 4, value: 0 }, damageThresholds: { major: 7, severe: 14 }, resources: { hitPoints: { max: 6, value: 0 }, stress: { max: 6, value: 0 }, hope: { max: 6, value: 2 } } };
+      const system = { ...structuredClone(source.system), evasion: 10, armorScore: { max: 4, value: 0 }, damageThresholds: { major: 7, severe: 14 }, resources: { hitPoints: { max: 6, value: 0 }, stress: { max: 6, value: 0 }, hope: { max: 6, value: 2 } }, bonuses: { maxLoadout: 0 } };
       system.levelupTiers = { tiers: Object.fromEntries(structuredClone(LEVEL_TIERS).map(t => [t.tier, t])) };
       if (source.type === "character" && runtime.levelupAuto) applyLevelups(system);
       return { ...source, system };
     },
+    // Foundry reports a declined write by its result: a create leaves the document out, an update or delete returns undefined.
     createActor: async source => {
+      if (!allowed("preCreateActor", source)) return undefined;
       const actor = runtime.preview(source);
       actor.id = source._id; actor.uuid = `Actor.${source._id}`;
-      actor.createEmbeddedDocuments = async (_type: string, data: any[]) => { operations.push(...data.map(d => d.type)); return data.map(d => ({ id: d._id })); };
-      actor.update = async (data: any) => {
-        for (const [path, value] of Object.entries(data)) setPath(actor, path, expandObject(value));
+      actor.createEmbeddedDocuments = async (type: string, data: any[]) => {
+        const kept = (type === "Item" ? data.flatMap(d => [d, ...grantedFeatures(d, documents)]) : data).filter(d => allowed(`preCreate${type}`, d));
+        operations.push(...kept.map(d => d.type));
+        return kept.map(d => ({ ...d, id: d._id }));
       };
-      actor.delete = async () => { actor.deleted = true; operations.push(`delete:${actor.type}`); };
+      actor.update = async (data: Record<string, unknown>, options: { diff?: boolean } = {}) => {
+        const changes = {};
+        for (const [path, value] of Object.entries(data)) setPath(changes, path, value);
+        if (!allowed("preUpdateActor", actor, changes)) return undefined;
+        // An update that changes nothing is skipped unless diff is false.
+        if (options.diff !== false && Object.entries(data).every(([path, value]) => isDeepStrictEqual(getPath(actor, path), value))) return undefined;
+        for (const [path, value] of Object.entries(data)) setPath(actor, path, expandObject(value));
+        return actor;
+      };
+      actor.delete = async () => {
+        if (!allowed("preDeleteActor", actor)) return undefined;
+        actor.deleted = true; operations.push(`delete:${actor.type}`); return actor;
+      };
       created.push(actor); return actor;
     }
   };
-  return { runtime, created, operations };
+  return { runtime, created, operations, hooks };
 }
