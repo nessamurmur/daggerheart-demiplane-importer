@@ -54,6 +54,21 @@ test("matched items preserve rules, effects, source identity and character state
   assert.equal(weapon.folder, undefined); assert.equal(weapon.ownership, undefined);
   assert.equal(document.system.equipped, false);
 });
+test("two exact matches stay a choice instead of becoming an editable item", async () => {
+  const c = character();
+  const candidates = [
+    { uuid: "Compendium.one.Item.ancestry", name: "Fixture Ancestry", type: "ancestry", pack: "One" },
+    { uuid: "Compendium.two.Item.ancestry", name: "Fixture Ancestry", type: "ancestry", pack: "Two" }
+  ];
+  const resolutions = editableResolutions(c, candidates);
+  const ancestry = resolutions.find(r => r.entry.kind === "ancestry")!;
+  assert.equal(ancestry.candidates.length, 2);
+  assert.equal(ancestry.selected, undefined);
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert(plan.issues.some(i => i.blocking && i.message === "Choose a content source for “Fixture Ancestry”."));
+  assert.equal(plan.itemSources.some(s => s.type === "ancestry"), false);
+});
 test("unregistered domains become descriptive features, never an unrelated domain", async () => {
   const c = character({ "domain_card_name.0.0": "Future card", "domain_card_domain.0.0": "future", "domain_card_type.0.0": "spell", "domain_card_recall.0.0": "1" });
   const { runtime } = mockRuntime();

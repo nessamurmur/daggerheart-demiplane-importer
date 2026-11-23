@@ -6,9 +6,9 @@ import type { Candidate, DocumentSource, ParsedCharacter, Resolution } from "../
 export function character(extra = {}): ParsedCharacter {
   return parseFields({ name: "Fixture character", heritage: "Testfolk", class: "Fixture Class - Fixture Path", level: "1", agility: "1", strength: "0", finesse: "0", instinct: "2", presence: "-1", knowledge: "1", hp_max: "6", stress_max: "6", evasion: "10", ancestry_name: "Fixture Ancestry", "hope.0": "Yes", "hope.1": "Yes", "proficiency.0": "Yes", ...extra });
 }
-/** The sources after the GM picks "Editable PDF item" for every entry the catalog left unresolved. */
+/** Sources after the GM picks "Editable PDF item" for every entry with no catalog match. An ambiguous match stays unresolved. */
 export function editableResolutions(c: ParsedCharacter, candidates: Candidate[] = []): Resolution[] {
-  return resolveEntries(c, candidates).map(r => ({ ...r, selected: r.selected === undefined ? null : r.selected }));
+  return resolveEntries(c, candidates).map(r => ({ ...r, selected: r.selected === undefined && r.candidates.length === 0 ? null : r.selected }));
 }
 
 const option = (type: string, checkboxSelections: number, extra: { minCost?: number; value?: number; amount?: number } = {}) => ({ type, checkboxSelections, minCost: 1, ...extra });
