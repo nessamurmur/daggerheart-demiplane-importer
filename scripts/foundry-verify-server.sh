@@ -142,6 +142,10 @@ print_current() {
 
 missing_secrets() {
   local missing=0
+  if [ ! -f "$FVTT" ]; then
+    echo "Missing $FVTT. The verify skill (pull request #11) is not in this checkout." >&2
+    missing=1
+  fi
   if ! python3 "$DOWNLOAD" release-ok "$APP" "$FOUNDRY_VERSION"; then
     if ! python3 "$DOWNLOAD" cache-ok "$ROOT/cache/$FOUNDRY_ARCHIVE_NAME"; then
       echo "Run scripts/foundry-cache-fetch.sh with a timed URL. No foundryvtt.com account secret is used." >&2
@@ -280,10 +284,6 @@ ensure_samples() {
 
 launch_server() {
   local out code newest label
-  if [ ! -f "$FVTT" ]; then
-    echo "Missing $FVTT. The verify skill (pull request #11) is not in this checkout." >&2
-    return 1
-  fi
   set +e
   out="$("$FVTT" launch 2>"$ROOT/launch.err")"
   code=$?
