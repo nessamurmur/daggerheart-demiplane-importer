@@ -45,9 +45,9 @@ test("up names every missing Runtime Secret and does not print a secret value", 
   });
   const output = `${result.stdout}${result.stderr}`;
   assert.notEqual(result.status, 0);
-  assert.match(output, /Missing Runtime Secret FOUNDRY_USERNAME\./);
+  assert.match(output, /FoundryVTT-Node-14.370.zip/);
   assert.match(output, /Missing Runtime Secret FOUNDRY_LICENSE_KEY\./);
-  assert.match(output, /A licence key does not download the server/);
+  assert.doesNotMatch(output, /FOUNDRY_USERNAME/);
   assert.doesNotMatch(output, /FOUNDRY_PASSWORD\./);
   assert.equal(output.includes(CANARY), false);
   assert.equal(fs.existsSync(verifyRoot), false);
@@ -67,9 +67,10 @@ test("down and status are safe when nothing is running", () => {
 
 test("docs point agents at the server hook and the same secret names", () => {
   const guide = fs.readFileSync(path.join(root, "docs/review/cloud-foundry.md"), "utf8");
-  for (const name of ["FOUNDRY_USERNAME", "FOUNDRY_PASSWORD", "FOUNDRY_LICENSE_KEY"]) {
-    assert.match(guide, new RegExp(name));
-  }
+  assert.match(guide, /FOUNDRY_LICENSE_KEY/);
+  assert.match(guide, /FoundryVTT-Node-14.370.zip/);
+  assert.match(guide, /foundry-cache-fetch.sh/);
+  assert.doesNotMatch(guide, /FOUNDRY_USERNAME/);
   assert.match(guide, /one active server/i);
   assert.match(guide, /render-evidence\.mjs/);
   assert.match(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /foundry-verify-server\.sh up/);
@@ -120,7 +121,8 @@ test("up stops a stale licence server and still names a missing secret", () => {
     assert.equal(alive(child.pid), true);
     const result = run("bash", [server, "up"], { ...clearedSecrets, FOUNDRY_VERIFY_ROOT: verifyRoot });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /Missing Runtime Secret FOUNDRY_USERNAME\./);
+    assert.match(result.stderr, /Missing Runtime Secret FOUNDRY_LICENSE_KEY\./);
+    assert.match(result.stderr, /FoundryVTT-Node-14.370.zip/);
     assert.equal(alive(child.pid), false);
     assert.match(result.stderr, /stopped a stale licence server/);
   } finally {
