@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
-"""Download and unpack Foundry VTT and the Foundryborne system zip.
+"""Unpack a cached Foundry Node.js zip and the Foundryborne system zip.
 
-fetch-foundry talks to foundryvtt.com. A licence key is not accepted there.
-Nothing in this file prints secret values, presigned URLs, or zip member names.
+The server build is FoundryVTT-Node-14.370.zip (main.js at the archive root).
+Nothing in this file logs in to foundryvtt.com or prints secret values.
 """
 
+import hashlib
 import json
 import os
 import pathlib
-import re
 import shutil
 import sys
 import tempfile
-import time
-import urllib.error
-import urllib.parse
 import urllib.request
 import zipfile
-from http.cookiejar import CookieJar
 
-FOUNDRY = "https://foundryvtt.com"
 USER_AGENT = "daggerheart-demiplane-importer-verify"
+ARCHIVE_NAME = "FoundryVTT-Node-14.370.zip"
+ARCHIVE_BYTES = 150182237
+ARCHIVE_SHA256 = "e891a46b2878745b38dd8c28e843d763f83e69aa14bdbd3156edd8dafaabe846"
 SAMPLE_PDFS = {
     "druid.pdf",
     "ex_ampleton.pdf",
@@ -59,13 +57,6 @@ def redact_file(path):
     if file.is_file():
         file.write_text(redact(file.read_text(errors="replace")))
     return 0
-
-
-def require_secret(name):
-    if os.environ.get(name, "").strip():
-        return True
-    sys.stderr.write(f"Missing Runtime Secret {name}.\n")
-    return False
 
 
 def assert_safe(archive):
@@ -122,15 +113,40 @@ def read_release(package_json):
     return version
 
 
+def app_package(app_dir):
+    return os.path.join(app_dir, "resources", "app", "package.json")
+
+
 def release_ok(app_dir, version):
-    package_json = os.path.join(app_dir, "resources", "app", "package.json")
-    main = os.path.join(app_dir, "resources", "app", "main.mjs")
+    package_json = app_package(app_dir)
+    main = os.path.join(app_dir, "resources", "app", "main.js")
     if not (os.path.isfile(package_json) and os.path.isfile(main)):
         return False
     try:
         return read_release(package_json) == version
     except Exception:
         return False
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def cache_ok(path):
+    """Exit 0 only when path is the pinned Node.js 14.370 archive."""
+    if not os.path.isfile(path):
+        return fail(f"Missing Foundry archive {ARCHIVE_NAME}.")
+    size = os.path.getsize(path)
+    if size != ARCHIVE_BYTES:
+        return fail(f"{ARCHIVE_NAME} is {size} bytes, expected {ARCHIVE_BYTES}.")
+    digest = sha256_file(path)
+    if digest != ARCHIVE_SHA256:
+        return fail(f"{ARCHIVE_NAME} sha256 is {digest}, expected {ARCHIVE_SHA256}.")
+    return 0
 
 
 def extract_system(zip_path, dest, version):
@@ -155,10 +171,21 @@ def extract_system(zip_path, dest, version):
     return 0
 
 
+def node_app_root(extracted):
+    """Node.js zip: main.js at the archive root, or inside one wrapper folder."""
+    if os.path.isfile(os.path.join(extracted, "main.js")):
+        return extracted
+    entries = [name for name in os.listdir(extracted) if not name.startswith(".")]
+    dirs = [name for name in entries if os.path.isdir(os.path.join(extracted, name))]
+    if len(entries) == 1 and dirs and os.path.isfile(os.path.join(extracted, dirs[0], "main.js")):
+        return os.path.join(extracted, dirs[0])
+    return None
+
+
 def extract_foundry(zip_path, dest, version):
     if release_ok(dest, version):
         return 0
-    parent = os.path.dirname(dest)
+    parent = os.path.dirname(dest) or "."
     os.makedirs(parent, exist_ok=True)
     stage = dest + ".partial"
     if os.path.isdir(stage):
@@ -166,135 +193,18 @@ def extract_foundry(zip_path, dest, version):
     os.makedirs(stage)
     try:
         safe_extract(zip_path, stage)
-        root = None
-        for dirpath, _dirs, _files in os.walk(stage):
-            if os.path.isfile(os.path.join(dirpath, "resources", "app", "main.mjs")):
-                root = dirpath
-                break
-        if not root or not release_ok(root, version):
-            return fail(f"download is not Foundry VTT {version}")
+        root = node_app_root(stage)
+        if not root or not os.path.isfile(os.path.join(root, "package.json")):
+            return fail("archive is not the Foundry Node.js build (main.js and package.json at the archive root)")
+        app = os.path.join(dest, "resources", "app")
         if os.path.isdir(dest):
             shutil.rmtree(dest)
-        shutil.move(root, dest)
+        os.makedirs(os.path.dirname(app), exist_ok=True)
+        shutil.copytree(root, app)
     finally:
         if os.path.isdir(stage):
             shutil.rmtree(stage)
     return 0 if release_ok(dest, version) else fail(f"Foundry {version} did not unpack")
-
-
-def opener():
-    jar = CookieJar()
-    handler = urllib.request.HTTPCookieProcessor(jar)
-    built = urllib.request.build_opener(handler)
-    built.addheaders = [("User-Agent", USER_AGENT)]
-    return built, jar
-
-
-def request(opener_, url, data=None, headers=None, timeout=60):
-    req = urllib.request.Request(url, data=data, headers=headers or {})
-    try:
-        with opener_.open(req, timeout=timeout) as res:
-            return res.status, res.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
-
-
-def fetch_foundry(dest, version):
-    if not (require_secret("FOUNDRY_USERNAME") and require_secret("FOUNDRY_PASSWORD")):
-        sys.stderr.write(
-            "A Foundry licence key does not download the server. "
-            "FOUNDRY_USERNAME and FOUNDRY_PASSWORD are the foundryvtt.com account.\n"
-        )
-        return 1
-    build = version.split(".")[-1]
-    if not build.isdigit():
-        return fail(f"refusing Foundry version {version}")
-    client, jar = opener()
-    status, body = request(client, FOUNDRY + "/auth/login/")
-    if status != 200:
-        return fail(f"Foundry login page returned {status}.")
-    html = body.decode("utf-8", "replace")
-    token = ""
-    match = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', html) or re.search(
-        r'value="([^"]+)"[^>]*name="csrfmiddlewaretoken"', html
-    )
-    if match:
-        token = match.group(1)
-    if not token:
-        return fail("Foundry login page did not include a CSRF token.")
-    form = urllib.parse.urlencode(
-        {
-            "csrfmiddlewaretoken": token,
-            "username": os.environ["FOUNDRY_USERNAME"],
-            "password": os.environ["FOUNDRY_PASSWORD"],
-            "next": "/",
-        }
-    ).encode()
-    status, body = request(
-        client,
-        FOUNDRY + "/auth/login/",
-        data=form,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Origin": FOUNDRY,
-            "Referer": FOUNDRY + "/auth/login/",
-        },
-    )
-    html = body.decode("utf-8", "replace")
-    has_session = any(cookie.name == "sessionid" for cookie in jar)
-    if status >= 400 or not has_session or 'id="id_password"' in html:
-        return fail(
-            "Foundry account login failed. Check the Runtime Secrets FOUNDRY_USERNAME and FOUNDRY_PASSWORD."
-        )
-    release_url = f"{FOUNDRY}/releases/download?build={build}&platform=node&response_type=json"
-    payload = None
-    for attempt in range(3):
-        status, body = request(client, release_url, headers={"Accept": "application/json", "Referer": FOUNDRY})
-        if status == 200:
-            try:
-                payload = json.loads(body)
-            except json.JSONDecodeError:
-                return fail("Foundry release response was not JSON.")
-            break
-        if status in (429, 503) and attempt < 2:
-            time.sleep(5 * (attempt + 1))
-            continue
-        return fail(
-            f"This Foundry account could not download build {version} (HTTP {status}). "
-            "A licence key does not download the server."
-        )
-    presigned = payload.get("url") if isinstance(payload, dict) else None
-    if not isinstance(presigned, str) or not presigned.startswith("https://"):
-        return fail(f"Foundry did not return a download URL for {version}.")
-    found = re.search(r"(?:releases/|foundryvtt[^/]*?-)(\d+\.\d+(?:\.\d+)?)", presigned, re.IGNORECASE)
-    if found and found.group(1) != version:
-        return fail(f"Foundry offered {found.group(1)} instead of {version}.")
-    partial = dest + ".partial"
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    try:
-        bare = urllib.request.build_opener()
-        req = urllib.request.Request(presigned, headers={"User-Agent": USER_AGENT})
-        with bare.open(req, timeout=300) as res, open(partial, "wb") as out:
-            total = 0
-            while True:
-                chunk = res.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > 800 * 1024 * 1024:
-                    return fail("Foundry download exceeded 800 MB.")
-                out.write(chunk)
-        os.replace(partial, dest)
-    except Exception as exc:
-        if os.path.exists(partial):
-            os.remove(partial)
-        return fail("Foundry download failed: " + redact(exc))
-    finally:
-        jar.clear()
-    if not zipfile.is_zipfile(dest):
-        os.remove(dest)
-        return fail("Foundry download was not a zip. Login may have failed.")
-    return 0
 
 
 def fetch_samples(dest):
@@ -346,8 +256,8 @@ def main():
             return 0 if release_ok(sys.argv[2], sys.argv[3]) else 1
         if command == "extract-foundry":
             return extract_foundry(sys.argv[2], sys.argv[3], sys.argv[4])
-        if command == "fetch-foundry":
-            return fetch_foundry(sys.argv[2], sys.argv[3])
+        if command == "cache-ok":
+            return cache_ok(sys.argv[2])
         if command == "fetch-samples":
             return fetch_samples(sys.argv[2])
         if command == "redact-file":
@@ -355,7 +265,7 @@ def main():
     except Exception as exc:
         return fail(redact(exc))
     return fail(
-        "usage: foundry-download.py system-ok|extract-system|release-ok|extract-foundry|fetch-foundry|fetch-samples|redact-file"
+        "usage: foundry-download.py system-ok|extract-system|release-ok|extract-foundry|cache-ok|fetch-samples|redact-file"
     )
 
 
