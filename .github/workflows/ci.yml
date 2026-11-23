@@ -1,0 +1,43 @@
+# Branch protection / rulesets: require the status check named "ci".
+# That string is this job's name. The workflow title "CI" is only the group label on a pull request.
+# Same Node, pnpm pin, typecheck, and test as .github/workflows/release.yml, plus the readiness lint and a ZIP diff.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install pinned package manager and dependencies
+        run: |
+          npm install --global pnpm@11.19.0
+          pnpm install --frozen-lockfile
+      - name: Typecheck and test
+        run: |
+          pnpm typecheck
+          pnpm test
+      - name: Package readiness lint
+        run: node scripts/check-package-readiness.mjs
+      - name: Build and verify the artifact
+        run: |
+          pnpm build
+          mkdir -p /tmp/zipcheck && unzip -q artifacts/*.zip -d /tmp/zipcheck
+          diff artifacts/module.json "/tmp/zipcheck/$(node -p "require('./artifacts/module.json').id")/module.json"

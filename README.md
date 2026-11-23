@@ -1,8 +1,8 @@
 # Demiplane PDF Importer for Daggerheart
 
-A GM-only Foundry VTT module that imports original Demiplane PDF exports into **new** Foundryborne Daggerheart characters. Every import has an editable review, content matching, and a calculated-stat comparison before anything is created.
+A GM-only Foundry VTT module that imports original Demiplane PDF exports into **new** Foundryborne characters. Compatible with Daggerheart. Every import has an editable review, content matching, and a calculated-stat comparison before anything is created.
 
-Target: Foundry **14.367**, Foundryborne Daggerheart **2.10.2**. Later system releases should be checked against the import preview before use.
+Target: Foundry **14.367**, Foundryborne **2.10.2**. Later system releases should be checked against the import preview before use.
 
 ## Install
 
@@ -59,7 +59,10 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
+node scripts/check-package-readiness.mjs
 ```
+
+Pull requests run typecheck, tests, the build, and that package-readiness lint. The required status check is named `ci`.
 
 The build produces `dist/daggerheart-demiplane-importer/`, a standalone `artifacts/module.json`, and `artifacts/daggerheart-demiplane-importer-0.1.0.zip`. The two manifest copies are identical. The ZIP includes the PDF.js library, worker, Apache license, module code and documentation. It excludes tests and sample PDFs.
 
@@ -85,4 +88,10 @@ Published versions are not overwritten. Use a new version for changes after publ
 
 Automated tests cover extraction, malformed values, matching ambiguity, multiclass and mixed ancestry mapping, missing rules, companion validation, native correction data, GM restrictions, failure cleanup, and report coverage. Private tests exercise both original PDFs without distributing their contents. Live-world verification is recorded in `VALIDATION.md`.
 
-Module code is MIT licensed. PDF.js is Apache-2.0 licensed. This independent importer is not affiliated with Demiplane, Foundryborne, Foundry Gaming, or Darrington Press.
+Module code is MIT licensed. PDF.js is Apache-2.0 licensed. This independent importer is not affiliated with, sponsored, or endorsed by Demiplane, Foundryborne, Foundry Gaming, Darrington Press, or Critical Role.
+
+Compatible with Daggerheart. Daggerheart is a Name Mark of Darrington Press. This download does not copy System Reference Document text or domain icons, and this module does not modify that document. The Darrington Press Community Gaming License's Daggerheart attribution follows.
+
+This product includes materials from the Daggerheart System Reference Document 2.0, © Critical Role, LLC. under the terms of the Darrington Press Community Gaming (DPCGL) License. More information can be found at https://www.daggerheart.com. There are no previous modifications by others.
+
+Licence: https://darringtonpress.com/license/ ([DPCGL 2.0 PDF](https://darringtonpress.com/wp-content/uploads/2026/08/DPCGL_2.0_AUG_26_2026.pdf)).
