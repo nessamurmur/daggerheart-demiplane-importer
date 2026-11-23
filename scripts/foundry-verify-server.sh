@@ -280,6 +280,10 @@ ensure_samples() {
 
 launch_server() {
   local out code newest label
+  if [ ! -f "$FVTT" ]; then
+    echo "Missing $FVTT. The verify skill (pull request #11) is not in this checkout." >&2
+    return 1
+  fi
   set +e
   out="$("$FVTT" launch 2>"$ROOT/launch.err")"
   code=$?
