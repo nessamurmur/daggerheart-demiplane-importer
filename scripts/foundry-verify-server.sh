@@ -13,9 +13,8 @@
 # machine is hosting with the same licence. This script also holds a lock so
 # two ups in this VM cannot both sign or launch.
 #
-# Runtime Secrets (Cursor dashboard → Cloud Agents → Secrets, this repository):
-#   FOUNDRY_USERNAME, FOUNDRY_PASSWORD   foundryvtt.com account, used only to download
-#   FOUNDRY_LICENSE_KEY                  signs the server; it does not download it
+# The only Foundry secret is FOUNDRY_LICENSE_KEY. The server zip is a cache file,
+# FoundryVTT-Node-14.370.zip, filled by scripts/foundry-cache-fetch.sh.
 # Optional: DEMIPLANE_SAMPLES_URL        https zip of the private sample PDFs
 set +x
 set -euo pipefail
@@ -25,6 +24,7 @@ ROOT="${FOUNDRY_VERIFY_ROOT:-$HOME/foundry-verify}"
 APP="${FOUNDRY_APP:-$ROOT/app-14.370}"
 BASE="$ROOT/base"
 FOUNDRY_VERSION=14.370
+FOUNDRY_ARCHIVE_NAME=FoundryVTT-Node-14.370.zip
 FOUNDRYBORNE_VERSION=2.10.2
 FVTT="$REPO/.claude/skills/verify-foundry-importer/scripts/fvtt.sh"
 DOWNLOAD="$REPO/scripts/foundry-download.py"
@@ -141,40 +141,21 @@ print_current() {
 }
 
 missing_secrets() {
-  local need_download=0 need_license=0 missing=0
+  local missing=0
   if ! python3 "$DOWNLOAD" release-ok "$APP" "$FOUNDRY_VERSION"; then
-    if ! zip_is_foundry "$ROOT/cache/foundryvtt-${FOUNDRY_VERSION}.zip"; then
-      need_download=1
+    if ! python3 "$DOWNLOAD" cache-ok "$ROOT/cache/$FOUNDRY_ARCHIVE_NAME"; then
+      echo "Run scripts/foundry-cache-fetch.sh with a timed URL. No foundryvtt.com account secret is used." >&2
+      missing=1
     fi
   fi
   if ! node "$META" signed "$BASE/Config/license.json"; then
-    need_license=1
-  fi
-  if [ "$need_download" -eq 1 ]; then
-    [ -n "${FOUNDRY_USERNAME:-}" ] || { echo "Missing Runtime Secret FOUNDRY_USERNAME." >&2; missing=1; }
-    [ -n "${FOUNDRY_PASSWORD:-}" ] || { echo "Missing Runtime Secret FOUNDRY_PASSWORD." >&2; missing=1; }
-  fi
-  if [ "$need_license" -eq 1 ]; then
     [ -n "${FOUNDRY_LICENSE_KEY:-}" ] || { echo "Missing Runtime Secret FOUNDRY_LICENSE_KEY." >&2; missing=1; }
   fi
   if [ "$missing" -eq 1 ]; then
-    echo "Add each missing name as a Runtime Secret in the Cursor dashboard (Cloud Agents → Secrets), applied to this repository. A licence key does not download the server; FOUNDRY_USERNAME and FOUNDRY_PASSWORD do. FOUNDRY_LICENSE_KEY signs it. Start a new agent after saving. See docs/review/cloud-foundry.md." >&2
+    echo "FOUNDRY_LICENSE_KEY is the only Foundry secret. See docs/review/cloud-foundry.md." >&2
     return 1
   fi
   return 0
-}
-
-zip_is_foundry() {
-  python3 - "$1" <<'PY'
-import sys, zipfile
-path = sys.argv[1]
-try:
-    archive = zipfile.ZipFile(path)
-except Exception:
-    sys.exit(1)
-ok = any(name.replace("\\", "/").endswith("resources/app/main.mjs") and ".." not in name.split("/") for name in archive.namelist())
-sys.exit(0 if ok else 1)
-PY
 }
 
 acquire_lock() {
@@ -240,7 +221,7 @@ import subprocess, sys
 app, data, port, log, pidfile = sys.argv[1:]
 with open(log, "w") as handle:
     proc = subprocess.Popen(
-        ["node", "resources/app/main.mjs", f"--dataPath={data}", f"--port={port}", "--noupdate"],
+        ["node", "resources/app/main.js", f"--dataPath={data}", f"--port={port}", "--noupdate"],
         cwd=app,
         stdin=subprocess.DEVNULL,
         stdout=handle,
@@ -375,10 +356,8 @@ cmd_up() {
   umask 077
   mkdir -p "$ROOT/cache" "$BASE"
   if ! python3 "$DOWNLOAD" release-ok "$APP" "$FOUNDRY_VERSION"; then
-    local zip="$ROOT/cache/foundryvtt-${FOUNDRY_VERSION}.zip"
-    if ! zip_is_foundry "$zip"; then
-      python3 "$DOWNLOAD" fetch-foundry "$zip" "$FOUNDRY_VERSION"
-    fi
+    local zip="$ROOT/cache/$FOUNDRY_ARCHIVE_NAME"
+    python3 "$DOWNLOAD" cache-ok "$zip"
     python3 "$DOWNLOAD" extract-foundry "$zip" "$APP" "$FOUNDRY_VERSION"
   fi
   python3 "$DOWNLOAD" extract-system "$ROOT/cache/foundryborne-${FOUNDRYBORNE_VERSION}.zip" \

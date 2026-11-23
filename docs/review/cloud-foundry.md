@@ -39,21 +39,27 @@ Foundry is **14.370**. `module.json` `compatibility.verified` is **14.367**. Say
 
 ## Secrets
 
-Add these as **Runtime Secrets**, not Build Secrets and not plain Environment Variables. Build Secrets are only present while the image builds. `up` runs later, in the agent, and reads the process environment. Runtime Secrets are injected there and redacted from transcripts.
+The only Foundry secret is `FOUNDRY_LICENSE_KEY`. It signs the server. It does not download Foundry. There is no foundryvtt.com username or password.
 
-Cursor dashboard → Cloud Agents → Secrets (My Secrets). Apply them to `nessamurmur/daggerheart-demiplane-importer`. Environment-scoped secrets apply only to that exact environment, and a config-as-code environment may not show a Secrets section. My Secrets for this repository is the place that reaches every environment.
+Add it as a **Runtime Secret**, not a Build Secret. Build Secrets are only present while the image builds. `up` runs later, in the agent. Runtime Secrets are injected there and redacted from transcripts.
 
-| Name | Required | What it is |
-| --- | --- | --- |
-| `FOUNDRY_USERNAME` | yes, unless the 14.370 zip is already cached | foundryvtt.com username or email |
-| `FOUNDRY_PASSWORD` | yes, unless the 14.370 zip is already cached | foundryvtt.com password |
-| `FOUNDRY_LICENSE_KEY` | yes, until `Config/license.json` has a signature | the software licence key |
-
-A licence key does not download Foundry. The account password does, through the same login form as foundryvtt.com (`/auth/login/`, then `GET /releases/download?build=370&platform=node`). A timed download URL expires in about five minutes, so it is not a standing secret. If the website asks for a second factor, login fails: download the Node.js zip for 14.370 from the Purchased Licenses page and place it at `~/foundry-verify/cache/foundryvtt-14.370.zip` (mode 600). `up` uses that file and does not log in.
+Cursor dashboard → Cloud Agents → Secrets (My Secrets). Apply it to `nessamurmur/daggerheart-demiplane-importer`. `FOUNDRY_LICENSE_KEY` is already set.
 
 Optional Runtime Secret `DEMIPLANE_SAMPLES_URL`: an `https` zip whose members include the four suite PDFs by those file names. Otherwise copy the PDFs into `~/Downloads`.
 
-`up` exits before it downloads or starts Foundry if a required secret is missing, and the message names the variable. It does not print the value. Start a new agent after saving secrets. An agent that is already running does not see them.
+`up` exits before it starts Foundry if the cache archive or `FOUNDRY_LICENSE_KEY` is missing, and the message names which one. It does not print the key.
+
+## Foundry archive
+
+The Node.js build only, not the Linux/Electron build. The file the maintainer downloads is `FoundryVTT-Node-14.370.zip` (150,182,237 bytes, sha256 `e891a46b2878745b38dd8c28e843d763f83e69aa14bdbd3156edd8dafaabe846`). `main.js` is at the archive root. `up` installs that tree at `~/foundry-verify/app-14.370/resources/app/` and starts it with system Node.
+
+A timed release URL lasts about five minutes and is not a standing secret. An agent with a fresh URL runs:
+
+```sh
+scripts/foundry-cache-fetch.sh '<timed-url>'
+```
+
+That writes `~/foundry-verify/cache/FoundryVTT-Node-14.370.zip`, checks the sha256, and does not print the URL's query string. The maintainer then saves an environment snapshot so later agents already have the archive. `up` fails if that file is missing or the hash does not match.
 
 ## One licence, one server
 
@@ -72,8 +78,9 @@ The signed licence is bound to the machine. A snapshot from another hostname wil
 
 This agent's environment is dashboard-managed: it does not read `.cursor/environment.json` until that file is selected as the environment's configuration. After this change is on the branch the environment builds:
 
-1. Add the three Runtime Secrets above.
+1. `FOUNDRY_LICENSE_KEY` is the only Foundry secret. It is already a Runtime Secret. Do not add a foundryvtt.com username or password.
 2. Point the environment at `.cursor/environment.json` and run a Build. The image installs Node 24.22.3, pnpm 11.19.0, Chrome, and the Foundryborne 2.10.2 zip. It does not install Foundry.
-3. Put the four sample PDFs in `~/Downloads`. Take an environment snapshot after that if later agents should have the PDFs without `DEMIPLANE_SAMPLES_URL`. A snapshot is optional for Foundry itself: the first `up` on a disk downloads 14.370 into `~/foundry-verify` and later ups reuse it.
+3. On the Purchased Licenses page, choose Node.js 14.370 and copy the timed URL (about five minutes). In an agent on this environment, run `scripts/foundry-cache-fetch.sh '<timed-url>'`. It stores `FoundryVTT-Node-14.370.zip` in the verify cache and checks the sha256. Save an environment snapshot after that so later agents start with the archive cached.
+4. Put the four sample PDFs in `~/Downloads`. Include them in the same snapshot if later agents should have them without `DEMIPLANE_SAMPLES_URL`.
 
 Foundry 14.370 and Foundryborne 2.10.2 match the verify skill. The module's `compatibility.verified` stays 14.367 until a live run on this build is the reason to change it.
