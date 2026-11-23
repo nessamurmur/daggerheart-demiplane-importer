@@ -27,10 +27,10 @@ test("Foundry preview uses the constructor's prepared stats without doubling cla
     prepareData() { this.preparations++; this.system.evasion += 10; this.system.resources.hitPoints.max += 6; }
   }
   try {
-    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
+    (globalThis as any).game = { system: { version: "2.10.2", settings: { automation: { levelupAuto: false }, homebrew: { maxLoadout: 5 } } }, user: { isGM: true }, modules: new Map([[MODULE_ID, { version: "test" }]]) };
     (globalThis as any).CONFIG = { Actor: { documentClass: PreparedActor }, DH: { DOMAIN: { allDomains: () => ({}) } } };
     const runtime = foundryRuntime();
-    assert.equal(runtime.levelupAuto, false);
+    assert.equal(runtime.levelupAuto, false); assert.equal(runtime.maxLoadout, 5);
     const source = { system: { evasion: 0, resources: { hitPoints: { max: 0 } } } };
     const actor = runtime.preview(source);
     assert.equal(actor.preparations, 1);
@@ -112,6 +112,89 @@ test("cleanup failure is returned with the exact remaining document", async () =
   const create = runtime.createActor;
   runtime.createActor = async source => { const actor = await create(source); actor.createEmbeddedDocuments = async () => { throw new Error("offline"); }; actor.delete = async () => { throw new Error("still offline"); }; return actor; };
   await assert.rejects(executePlan(plan, runtime), (e: any) => e.importReport.cleanupFailures.length === 1 && e.message.includes("Cleanup"));
+});
+
+async function reviewedPlan(c = character(), documents: Record<string, any> = {}) {
+  const mock = mockRuntime(documents);
+  const candidates = Object.entries(documents).map(([uuid, d]) => ({ uuid, name: d.name, type: d.type, pack: "Test", system: {} }));
+  const plan = await buildPlan(c, resolveEntries(c, candidates), mock.runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  for (const comparison of plan.comparisons) comparison.choice = "foundry";
+  plan.reviewed = true;
+  return { ...mock, plan };
+}
+/** A class that grants a feature, as Foundryborne's Druid grants Beastform. */
+const grantingClass = {
+  "Compendium.test.Item.class": { name: "Fixture Class", type: "class", system: { domains: ["sage"], hitPoints: 6, evasion: 10, features: [{ type: "class", item: "Compendium.test.Item.beastform" }], backgroundQuestions: [], connections: [] } },
+  "Compendium.test.Item.beastform": { name: "Beastform", type: "feature", system: { description: "<p>Transform.</p>" } }
+};
+const companion = (training: { type: string; data: string[] }[] = []) => ({ enabled: true, name: "Test companion", evasion: 12, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d6", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training });
+
+test("a feature that Foundry declines while granting a class fails and rolls back the import, and a retry creates it", async () => {
+  const { runtime, created, hooks, plan } = await reviewedPlan(character(), grantingClass);
+  hooks.preCreateItem = data => data.name !== "Beastform";
+  await assert.rejects(executePlan(plan, runtime), /Foundry declined to add “Beastform”/);
+  assert.equal(created[0].deleted, true);
+  delete hooks.preCreateItem;
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
+test("a declined community feature, linked by a bare UUID as Foundryborne communities are, fails and rolls back the import", async () => {
+  const community = {
+    "Compendium.test.Item.community": { name: "Fixture Community", type: "community", system: { features: ["Compendium.test.Item.lightfoot"] } },
+    "Compendium.test.Item.lightfoot": { name: "Lightfoot", type: "feature", system: { description: "<p>Move quietly.</p>" } }
+  };
+  const { runtime, created, hooks, plan } = await reviewedPlan(character({ community_name: "Fixture Community" }), community);
+  hooks.preCreateItem = data => data.name !== "Lightfoot";
+  await assert.rejects(executePlan(plan, runtime), /Foundry declined to add “Lightfoot”, granted by “Fixture Community”/);
+  assert.equal(created[0].deleted, true);
+  delete hooks.preCreateItem;
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
+test("a declined companion link fails the import and removes both actors", async () => {
+  const c = character(); c.companion = companion();
+  const { runtime, created, hooks, plan } = await reviewedPlan(c);
+  hooks.preUpdateActor = (_actor, changes) => !changes.system?.companion;
+  await assert.rejects(executePlan(plan, runtime), /declined to link the companion/);
+  assert.deepEqual(created.map(a => [a.type, a.deleted]), [["character", true], ["companion", true]]);
+});
+test("a declined companion training feature fails the import and removes both actors", async () => {
+  const c = character({ level: "2" }); c.companion = companion([{ type: "creatureComfort", data: [] }]);
+  const { runtime, created, hooks, plan } = await reviewedPlan(c);
+  hooks.preCreateItem = data => !data.flags?.[MODULE_ID]?.companionTraining;
+  await assert.rejects(executePlan(plan, runtime), /declined/);
+  assert.deepEqual(created.map(a => a.deleted), [true, true]);
+});
+test("a declined biography and marks update fails the import, even when the marks already match", async () => {
+  const { runtime, created, hooks, plan } = await reviewedPlan();
+  hooks.preUpdateActor = (_actor, changes) => !changes.system?.biography;
+  await assert.rejects(executePlan(plan, runtime), /declined/);
+  assert.equal(created[0].deleted, true);
+});
+test("an import whose biography and marks need no change still completes", async () => {
+  const { runtime, plan } = await reviewedPlan();
+  assert.equal((await executePlan(plan, runtime)).report.status, "complete");
+});
+test("a declined import report fails the import, and the failure report says why without naming the deleted actor", async () => {
+  const { runtime, created, hooks, plan } = await reviewedPlan();
+  hooks.preUpdateActor = (_actor, changes) => !changes.flags?.[MODULE_ID]?.report;
+  await assert.rejects(executePlan(plan, runtime), (e: any) => {
+    assert.match(e.message, /declined/);
+    assert.equal(e.importReport.status, "failed"); assert.equal(e.importReport.error, e.message);
+    assert.equal(e.importReport.actorUuid, undefined); assert.deepEqual(e.importReport.verifiedStats, []);
+    return true;
+  });
+  assert.equal(created[0].deleted, true);
+});
+test("a rollback delete that Foundry declines is reported with the actor it left behind", async () => {
+  const { runtime, hooks, plan } = await reviewedPlan();
+  hooks.preCreateItem = () => false;
+  hooks.preDeleteActor = () => false;
+  const leftover = `Actor.${plan.actorData._id}`;
+  await assert.rejects(executePlan(plan, runtime), (e: any) => {
+    assert.equal(e.importReport.cleanupFailures.length, 1); assert(e.importReport.cleanupFailures[0].includes(leftover));
+    assert(e.message.includes(`Cleanup could not remove: ${plan.actorData.name} (${leftover})`));
+    return true;
+  });
 });
 test("successful import creates classes first and reports every populated source field", async () => {
   const c = character({ extra: "unknown", "experience_name.0": "Scout", "experience_bonus.0": "0" });
@@ -247,6 +330,28 @@ function levelFourRogue() {
     "experience_name.0": "Silver Tongued", "experience_bonus.0": "3", "experience_name.1": "Quick Hands", "experience_bonus.1": "3", "experience_name.2": "Tech Savvy", "experience_bonus.2": "2"
   }, [1, 1, 1, 2, 3, 4]);
 }
+test("cards beyond Foundryborne's loadout limit go to the vault in creation order, and the review names them", async () => {
+  const marked = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`domain_card_archived.0.${i}`, "Yes"]));
+  const { c, resolutions, runtime } = withCards({ level: "4", ...marked }, [1, 1, 1, 2, 3, 4], grantingClass);
+  const vault = (plan: { itemSources: any[] }) => plan.itemSources.filter(s => s.type === "domainCard" && s.system.inVault).map(s => s.name);
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert(!plan.issues.some(i => i.blocking));
+  assert.deepEqual(vault(plan), ["Card 5"]);
+  const notice = plan.issues.find(i => i.code === "loadout-limit");
+  assert(notice && !notice.blocking); assert.match(notice.message, /Card 5/);
+  const { preview, getDocument } = runtime;
+  runtime.preview = source => { const actor = preview(source); actor.system.bonuses = { maxLoadout: -1 }; return actor; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), ["Card 4", "Card 5"], "an item that lowers the limit, like Attuned armor, lowers it here too");
+  runtime.preview = source => { const actor = preview(source); actor.system.bonuses = { maxLoadout: source.items.some((i: any) => i.system?.granter) ? 1 : 0 }; return actor; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), [], "a granted feature that raises the limit counts, as Foundryborne creates grants before cards");
+  runtime.preview = preview;
+  runtime.getDocument = async uuid => { const d = await getDocument(uuid); return uuid.endsWith("card5") ? { ...d, toObject: () => ({ ...d.toObject(), system: { ...d.toObject().system, loadoutIgnore: true } }) } : d; };
+  assert.deepEqual(vault(await buildPlan(c, resolutions, runtime)), [], "a card that ignores the limit stays in the loadout");
+  runtime.getDocument = getDocument; runtime.maxLoadout = Infinity;
+  const unlimited = await buildPlan(c, resolutions, runtime);
+  assert.deepEqual(vault(unlimited), []);
+  assert(!unlimited.issues.some(i => i.code === "loadout-limit"));
+});
 const levelFourTaken = { 2: ["t2 hitPoint #1", "t2 trait #1 strength+presence"], 3: ["t2 domainCard #1", "t2 experience #1 exp0+exp1"], 4: [] };
 
 test("higher-level imports record level-up history that Foundry replays to the PDF's stats", async () => {
