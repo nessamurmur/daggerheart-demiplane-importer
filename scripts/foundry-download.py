@@ -201,6 +201,11 @@ def extract_foundry(zip_path, dest, version):
             shutil.rmtree(dest)
         os.makedirs(os.path.dirname(app), exist_ok=True)
         shutil.copytree(root, app)
+        # The verify launcher on the skill branch starts resources/app/main.mjs.
+        # The Node zip ships main.js. A relative symlink lets that launcher run this file.
+        main_mjs = os.path.join(app, "main.mjs")
+        if os.path.isfile(os.path.join(app, "main.js")) and not os.path.lexists(main_mjs):
+            os.symlink("main.js", main_mjs)
     finally:
         if os.path.isdir(stage):
             shutil.rmtree(stage)
