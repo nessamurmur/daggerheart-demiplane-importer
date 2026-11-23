@@ -58,3 +58,11 @@ Class: R. Head: 4a41e01. CI check `ci`: <link> green.
 - `pnpm typecheck && pnpm test && pnpm build`: paste the counts the commands printed. Name the test or journey that fails on the base SHA and passes on the head, with the failing assertion.
 - Live (Foundry build, Foundryborne version, module version, run id): see the Live evidence comment. Journeys from `.claude/skills/verify-foundry-importer` `journeys.json`.
 ```
+
+## 5. Cloud agent machine
+
+E4 says cloud agents cannot run the suite, and that the verdict stays `NEEDS_EVIDENCE` until NJ's machine posts the block. That remains the fallback when `FOUNDRY_USERNAME`, `FOUNDRY_PASSWORD`, or `FOUNDRY_LICENSE_KEY` is missing, or when the private sample PDFs are not on the machine.
+
+When those Runtime Secrets are set, the cloud agent runs E4 itself. `scripts/foundry-verify-server.sh up` prints `EVIDENCE`. That directory is what `render-evidence.mjs` reads (pull request #13, branch `cursor/live-evidence-screenshots-b34c`): `run.json` (`runId`, `foundry`, `foundryborne`, `moduleVersion`, `headSha`, no home directory path) and, after the suite, one `<journey-id>/` folder with `result.json`, the stable screenshot names, and `observation.txt`. Paste the printed `## Live evidence` block into the PR description. Do not paste `RUN` or `EVIDENCE` paths. `scripts/foundry-verify-server.sh down` stops the server and leaves that directory in place.
+
+A Foundry licence allows one active server. Do not start a second one on NJ's computer or in another cloud agent. Secret names, the sample PDFs, and the one-time environment steps are in `docs/review/cloud-foundry.md`.
