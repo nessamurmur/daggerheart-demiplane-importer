@@ -97,6 +97,7 @@ with zipfile.ZipFile(zip_path, "w") as archive:
   const extracted = spawnSync("python3", [download, "extract-foundry", zip, dest, "14.370"], { encoding: "utf8" });
   assert.equal(extracted.status, 0, extracted.stderr);
   assert.equal(fs.readFileSync(path.join(dest, "resources/app/main.js"), "utf8").includes("foundry"), true);
+  assert.equal(fs.readlinkSync(path.join(dest, "resources/app/main.mjs")), "main.js");
   const electron = path.join(dir, "electron.zip");
   spawnSync("python3", ["-c", `
 import sys, zipfile
