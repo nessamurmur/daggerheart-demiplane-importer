@@ -7,18 +7,18 @@ You are one agent, one pass per PR head SHA. You review; you do not fix, push, m
 ## 0. Budget rules (follow before reading anything)
 
 1. Skip draft PRs. Skip if the head SHA already has a verdict comment (see section 6).
-2. If CI exists and is pending for the head SHA, stop and post nothing (you will run again on the next trigger). If it is red, post one short comment "Waiting on green CI for <sha>" (once per SHA) and stop. Do not review a red PR.
+2. If `ci` or `formal-verification` exists and is pending for the head SHA, stop and post nothing (you will run again on the next trigger). If either is red, post one short comment "Waiting on green ci and formal-verification for <sha>" (once per SHA) and stop. Do not review a red PR.
 3. Re-review only the diff since the last reviewed SHA (`compare_commits last_sha...head`), plus any thread you opened. Do not re-read the whole PR.
 4. Read in this order and stop reading when you can decide: PR body, `list_pull_request_files`, the diff of `src/**`, `tests/**`, then only the other files the diff touches. Never read `pnpm-lock.yaml` beyond new/removed top-level packages.
 5. Hard cap: 10 findings per review; 1 review run per head SHA; at most 2 runs per PR per day. PRs over about 800 changed lines: report `CHANGES_REQUESTED` with one BLOCKER "split this PR" and review only the first-order structure.
-6. Run commands only when needed: at most `pnpm install --frozen-lockfile && pnpm typecheck && pnpm test` when CI is absent, and optionally one red-to-green proof (section 3, check E3). No other long-running commands.
+6. Run commands only when needed: at most `pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm verify` when the Actions jobs are absent, and optionally one red-to-green proof (section 3, check E3). No other long-running commands.
 7. The `deep-review` label on the PR (set by NJ or the Engineering Lead) lifts rules 5 and 6 and enables the interrogate-style adversarial pass (section 4, last bullet). Otherwise do not run it.
 
 ## 1. What to load
 
 - This brief, `docs/review/evidence-contract.md`, and the PR.
 - `docs/review/foundry-readiness.md` ONLY when the diff touches a path in its trigger list (section 5 here).
-- Repo ground truth: `README.md` ("Import", "Privacy", "Development", "Licence"), `VALIDATION.md` status, `src/types.ts`, and `.claude/skills/verify-foundry-importer/SKILL.md`. That skill is pull request #11 and is not on `main` until that PR merges; read it from that head.
+- Repo ground truth: `README.md` ("Import", "Privacy", "Development", "Licence"), `VALIDATION.md` status, `src/types.ts`, `.claude/skills/verify-foundry-importer/SKILL.md` (on `main`), and `CONTRIBUTING.md`.
 
 ## 2. Repo map (use these names; they are the ubiquitous language)
 
@@ -42,7 +42,7 @@ Findings use severity `BLOCKER` (must fix before merge), `SHOULD` (fix now or op
 - **model-the-domain**: look for a second boolean that must stay in sync with the first, or one more branch in an `if (type === ...)` chain. Concrete hot spots: the per-kind branches in `fallback()` (`src/importer.ts`); `Resolution.selected` (a source uuid, `null` for an editable PDF item, `undefined` while unresolved) together with `Entry.include` (false drops the entry before `resolveEntries`); `Issue.blocking`. Prefer a discriminated union or a per-`ItemKind` registry when a change adds a third repeated branch. Do not demand abstraction for a one-off.
 - **boundary-discipline**: parse once, at the edge. PDF values are parsed in `pdf.ts`/`parseFields`; inside, trust the types. No Foundry global (`game`, `ui`, `CONFIG`, `foundry`, `Hooks`, `fromUuid`) may appear in `core.ts`, `levelups.ts`, `types.ts`, or in `buildPlan` and its helpers. Validation inside planning that duplicates a boundary parse is redundant. `DocumentSource = Record<string, any>` must not widen.
 - **type-system-discipline**: no new `any` outside the adapter (`globals.d.ts`, `foundryRuntime`, `executePlan` document handles). Brand semantic strings when two arguments could be swapped (uuid vs `_id` vs entry name). Derive types from the schema that owns the shape instead of hand-rolling a parallel one.
-- **test-behavior-not-implementation**: tests drive `buildPlan`/`executePlan` through `ImportRuntime` fakes and assert observable results (created documents, report, rollback, issues). Break-the-behavior test: would the test fail if the fix were reverted? Change-the-internals test: would it fail if internals were renamed? Watch `tests/helpers.ts`, which mirrors Foundryborne's level-up replay (`applyLevelups`), companion checkbox rendering (`companionCheckboxesTaken`), and granted-feature joining: an expected value computed by a mirror of the system under test proves nothing about the real system. A change to a mirror requires live evidence (section 4 of the evidence contract). Assert error types or codes that callers branch on, not message text.
+- **test-behavior-not-implementation**: tests drive `buildPlan`/`executePlan` through `ImportRuntime` fakes and assert observable results (created documents, report, rollback, issues). Break-the-behavior test: would the test fail if the fix were reverted? Change-the-internals test: would it fail if internals were renamed? Watch `tests/helpers.ts`, which mirrors Foundryborne's level-up replay (`applyLevelups`), companion checkbox rendering (`companionCheckboxesTaken`), and granted-feature joining: an expected value computed by a mirror of the system under test proves nothing about the real system. Live evidence for that mirror is E4, required only when the pull request bumps the version (`docs/review/evidence-contract.md`). On every other pull request the required proof is `pnpm verify` and the unit tests. Assert error types or codes that callers branch on, not message text.
 - **prove-it-works**: see `evidence-contract.md`. You check the evidence; where cheap you reproduce it.
 - **subtract-before-you-add**: removal precedes addition. Dead code, a guard for a state that cannot exist, a speculative option, a stub reference, a second path to the same outcome: flag. A PR that adds a validator without a case that triggers it gets a SHOULD.
 - **minimize-reader-load**: can a new reader answer "where does X come from" and "what can change X" in 30 seconds? Count layers a change adds (wrappers with one caller, adapters with no second implementation) and mutable state scope (module state > fields > locals > returns). `src/importer.ts` and `src/wizard.ts` are already dense; a change must not make either denser without a reason in the PR body.
@@ -70,11 +70,11 @@ Check only what the diff touches. The ones that matter most here:
 - Paths to module files use `foundry.utils.getRoute()`; no new hard-coded `/modules/...` URLs (`src/pdf.ts` has two; do not add more).
 - CSS stays namespaced `.dpi-*`; no selectors that restyle Foundry or other modules.
 - Documents are created through Foundry's document API; `keepId` only where the code explains why.
-- If the live evidence's `browser-console.log` shows a Foundry deprecation warning from this module, that is a BLOCKER for a new warning and a SHOULD for an existing one.
+- On a release candidate, if the live evidence's `browser-console.log` shows a Foundry deprecation warning from this module, that is a BLOCKER for a new warning and a SHOULD for an existing one.
 
 ### Lens 4: scope and process
 
-- The PR matches its stated Why and Scope; no drive-by refactors. Commits are small and single-purpose. Title is `type(scope): ...`.
+- The PR matches its stated Why and Scope; no drive-by refactors. Commits are small and single-purpose. The pull request title is `NES-<n>: <summary>`, and the squash commit message is that title plus ` (#<PR>)` (`CONTRIBUTING.md`).
 - PR body follows `.github/pull_request_template.md` (Why, What changed, Scope, Tradeoffs, Blast Radius, Verification). A missing section is `NEEDS_EVIDENCE`.
 - Product scope: NJ initiates features. A feature PR with no linked request from NJ (issue, Linear id, or a line in the PR body saying NJ asked) is `NEEDS_HUMAN`.
 - Private data: no sample PDFs, world JSON, Foundry license data, or pasted rules text anywhere in the diff, test fixtures, or evidence text. Live screenshots attached to the PR may show character names. That does not allow committing the PDFs or the saved world. Fixtures use synthetic names ("Fixture Class").
@@ -84,17 +84,17 @@ Check only what the diff touches. The ones that matter most here:
 
 Read `docs/review/evidence-contract.md`. Decide the change class (docs/CI only; pure core logic; runtime or wizard or styles; manifest/build/release), then confirm the required evidence exists for the head SHA:
 
-- E1 CI is green for the head SHA (or you ran `pnpm typecheck && pnpm test` when CI is absent).
+- E1 Jobs `ci` and `formal-verification` are green for the head SHA (or you ran `pnpm typecheck && pnpm test && pnpm verify` when those jobs are absent).
 - E2 The PR states the head SHA the evidence was produced on, or a later SHA differs only in comments, docs, or evidence.
 - E3 For a fix: at least one named test fails on the base commit and passes on the head. You may confirm once by restoring the base `src/` (`git checkout origin/main -- src` in a scratch worktree), running the one named test file, and recording the result. Skip if the PR is not a fix.
-- E4 For runtime, wizard, styles, or a mirror change in `tests/helpers.ts`: a `## Live evidence` block in the PR description (Foundry build, Foundryborne version, module version, head SHA, run id, one pass/fail line per journey, one observation sentence per journey, `failures: 0`, `pageErrors: 0`). Each import journey embeds screenshots of the wizard steps, the review screen, and the created actor sheet. The open-importer journey embeds the wizard opening. You cannot open the evidence directory (it lives on NJ's machine). The screenshots in the description are what you can see. A block that reports pass/fail and embeds no screenshots is evidence `missing`, and the verdict is `NEEDS_EVIDENCE`. The same if any journey has no observation line. Check the block names the head SHA, covers the changed behavior through the UI path, and includes a red-on-base line for a fix. Mark the evidence `ok`, `missing`, or `stale` (SHA mismatch). Pass/fail lines are the implementer's report; say that in the review. Look at the screenshots.
+- E4 Only when the pull request bumps `version` in `module.json` and `package.json` (a release candidate): a `## Live evidence` block in the PR description (Foundry build, Foundryborne version, module version, head SHA, run id, one pass/fail line per journey, one observation sentence per journey, `failures: 0`, `pageErrors: 0`). Each import journey embeds screenshots of the wizard steps, the review screen, and the created actor sheet. The open-importer journey embeds the wizard opening. You cannot open the evidence directory (it lives on the machine that ran the suite). The screenshots in the description are what you can see. A block that reports pass/fail and embeds no screenshots is evidence `missing`, and the verdict is `NEEDS_EVIDENCE`. The same if any journey has no observation line. A critical failure in that run is a BLOCKER until it is fixed. Check the block names the head SHA, covers the changed behavior through the UI path, and includes a red-on-base line for a fix. Mark the evidence `ok`, `missing`, or `stale` (SHA mismatch). Pass/fail lines are the implementer's report; say that in the review. Look at the screenshots. When the version did not change, E4 is `ok` and the description says it was not required. Class R, import behaviour, and a `tests/helpers.ts` mirror do not change that.
 - E5 Evidence contains no private content (section 3, Lens 4).
 
 Last step, only with the `deep-review` label: attempt to break the change. State the intent in your own words, then try 3 to 5 adversarial inputs against the real code (a malformed PDF field, a blank number versus zero, a duplicate entry name, an unregistered domain, a write that Foundry declines), and keep only findings you ran.
 
 ## 5. Readiness trigger (load `foundry-readiness.md` when the diff touches any of)
 
-`module.json`, `package.json` (version, dependencies, scripts), `pnpm-lock.yaml` (new top-level package), `LICENSE`, `THIRD_PARTY_NOTICES*`, `README.md` (install, privacy, licence, attribution text), `scripts/build.mjs`, `scripts/release-manifest.mjs`, `.github/workflows/**`, `lang/**`, `styles/**`, any new image, font, audio or other binary asset, or any new user-facing string. Also run `node scripts/check-package-readiness.mjs --json` (once it exists on main) and treat its `ERROR` entries as BLOCKERs and new `WARN`s as SHOULDs. Do not run the readiness audit otherwise.
+`module.json`, `package.json` (version, dependencies, scripts), `pnpm-lock.yaml` (new top-level package), `LICENSE`, `THIRD_PARTY_NOTICES*`, `README.md` (install, privacy, licence, attribution text), `scripts/build.mjs`, `scripts/release-manifest.mjs`, `.github/workflows/**`, `lang/**`, `styles/**`, any new image, font, audio or other binary asset, or any new user-facing string. Also run `node scripts/check-package-readiness.mjs --json` and treat its `ERROR` entries as BLOCKERs and new `WARN`s as SHOULDs. Do not run the readiness audit otherwise.
 
 ## 6. Output (one comment, one review)
 
@@ -109,7 +109,7 @@ Post, in this order:
    `verdict` is exactly one of:
    - `SATISFIED`: zero BLOCKERs; evidence `ok`; you would merge this. SHOULDs may remain, listed as follow-ups.
    - `CHANGES_REQUESTED`: at least one BLOCKER.
-   - `NEEDS_EVIDENCE`: code may be fine but required evidence is `missing` or `stale`, or the PR body lacks required sections. A live-evidence block with no screenshots, or with a journey that has no observation line, is `missing`.
+   - `NEEDS_EVIDENCE`: code may be fine but required evidence is `missing` or `stale`, or the PR body lacks required sections. On a release candidate, a live-evidence block with no screenshots, or with a journey that has no observation line, is `missing`. A pull request that does not bump the version does not need that block.
    - `NEEDS_HUMAN`: a decision only NJ can make (product scope, licence/IP, a policy tradeoff). State the question in one sentence.
 
    `evidence` is `ok | missing | stale`; `readiness` is `not_run | pass | findings`. `head_sha` is the PR head you reviewed. A verdict is valid only while it equals the PR's current head SHA.
@@ -117,7 +117,7 @@ Post, in this order:
 3. A GitHub review of type `COMMENT`. The author is either the repository owner's account (`nessamurmur`) or `cursor[bot]`. Either one satisfies this step. `nessamurmur` also authors the pull requests, so GitHub will not accept `APPROVE` or `REQUEST_CHANGES` from that account. Do not submit either review event. The review carries only the inline comments, one per finding, each starting with its id and severity. The marker comment from step 1 carries `verdict` and `head_sha`. The review event does not replace that comment.
 4. Set exactly one label: `review:satisfied`, `review:changes-requested`, `review:needs-evidence`, or `review:needs-human` (remove the other three). Create the label if it is missing. The label matches the verdict in the marker comment.
 
-Do not merge, close, or push. The merge rule reads the marker comment and the `review:*` label. The Engineering Lead merges when the latest marker has `verdict=SATISFIED`, its `head_sha` equals the PR head, the label is `review:satisfied`, CI is green for that SHA, and `evidence` is `ok`.
+Do not merge, close, or push. The merge rule reads the marker comment and the `review:*` label. The Engineering Lead merges when the latest marker has `verdict=SATISFIED`, its `head_sha` equals the PR head, the label is `review:satisfied`, `ci` and `formal-verification` are green for that SHA, and `evidence` is `ok`. `CONTRIBUTING.md` also requires a squash merge and a branch that is up to date with `main`.
 
 ## 7. Tone
 

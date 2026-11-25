@@ -48,7 +48,7 @@ test("up names every missing Runtime Secret and does not print a secret value", 
   assert.match(output, /FoundryVTT-Node-14.370.zip/);
   assert.match(output, /Missing Runtime Secret FOUNDRY_LICENSE_KEY\./);
   assert.equal(fs.existsSync(path.join(root, ".claude/skills/verify-foundry-importer/scripts/fvtt.sh")), true);
-  assert.doesNotMatch(output, /The verify skill \(pull request #11\) is not in this checkout/);
+  assert.doesNotMatch(output, /The verify skill is not in this checkout/);
   assert.doesNotMatch(output, /FOUNDRY_USERNAME/);
   assert.doesNotMatch(output, /FOUNDRY_PASSWORD\./);
   assert.equal(output.includes(CANARY), false);

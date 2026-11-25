@@ -1,11 +1,13 @@
 ---
 name: verify-foundry-importer
-description: Drive the Demiplane PDF importer inside a real, isolated Foundry VTT 14 + Foundryborne Daggerheart 2.10.2 instance on this machine, the way a GM does (Actors sidebar button, wizard tabs, stat review, Create character), and capture screenshots plus created-actor state as proof. Use after changing src/ or styles/, before a release, or whenever unit tests alone cannot show that an import really works in Foundry.
+description: Drive the Demiplane PDF importer inside a real, isolated Foundry VTT 14 + Foundryborne Daggerheart 2.10.2 instance on this machine, the way a GM does (Actors sidebar button, wizard tabs, stat review, Create character), and capture screenshots plus created-actor state as proof. Required only on a release-candidate pull request, one that bumps the version in module.json and package.json. Every other pull request uses pnpm verify and docs/review/evidence-contract.md.
 ---
 
 # Verify the importer in real Foundry
 
 The module only means anything inside Foundry. This skill starts a **throwaway** local Foundry server with its own copy of the data, joins it headlessly as Gamemaster through system Chrome, drives the wizard with Playwright, and asserts on the actors that were actually created.
+
+Live Foundry evidence is required only on a release-candidate pull request: one that bumps `version` in `module.json` and `package.json` together (`docs/review/evidence-contract.md`, `CONTRIBUTING.md`). Every other pull request, including a change to import behaviour, is covered by `pnpm verify` and that contract. Every critical issue this run finds on a release candidate is fixed before that pull request merges.
 
 Never drive the user's Sqyre world (Witherwild) or any server this skill did not start. Every run gets a fresh data dir and a random port, so parallel runs are fine.
 

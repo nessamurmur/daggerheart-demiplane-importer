@@ -22,9 +22,9 @@
 
 - Class:
 - Head SHA:
-- CI:
-- Red then green (test or journey, base SHA vs head SHA):
-- Live Foundry evidence (import behaviour, class R, or a `tests/helpers.ts` mirror): paste the `## Live evidence` block from `render-evidence.mjs` (head SHA, Foundry and Foundryborne versions, pass/fail, one observation, and screenshots per journey), or `needs-live-run` plus the reason and the journeys from `.claude/skills/verify-foundry-importer`
+- CI: jobs `ci` and `formal-verification` on the head
+- Red then green (test, base SHA vs head SHA):
+- Live Foundry evidence: only when this PR bumps the version (a release candidate). Paste the `## Live evidence` block from `.claude/skills/verify-foundry-importer/scripts/render-evidence.mjs` (head SHA, Foundry and Foundryborne versions, pass/fail, one observation, and screenshots per journey), or `needs-live-run` plus the reason and the journeys. If the version did not change, write "not a release candidate".
 - Package artifact (class M):
 
 ## User-facing strings

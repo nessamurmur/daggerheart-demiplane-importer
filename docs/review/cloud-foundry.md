@@ -2,7 +2,9 @@
 
 The verify skill (`.claude/skills/verify-foundry-importer`) drives a throwaway Foundry 14.370 world. On NJ's machine that world already exists. On a cloud agent, `scripts/foundry-verify-server.sh` prepares the same layout and is the only command that should start or stop the server.
 
-`up` prints `RUN`, `URL`, and `EVIDENCE`. `EVIDENCE` is the directory `render-evidence.mjs` reads (pull request #13). `down` stops that server and keeps the directory. Do not paste `RUN` or `EVIDENCE` into a pull request; paste the `## Live evidence` block.
+Run this for a release-candidate pull request, the one that bumps the version in `module.json` and `package.json`. Other pull requests do not require it (`docs/review/evidence-contract.md`).
+
+`up` prints `RUN`, `URL`, and `EVIDENCE`. `EVIDENCE` is the directory `.claude/skills/verify-foundry-importer/scripts/render-evidence.mjs` reads. `down` stops that server and keeps the directory. Do not paste `RUN` or `EVIDENCE` into a pull request; paste the `## Live evidence` block.
 
 ## What the agent runs
 
@@ -17,7 +19,7 @@ node $S/render-evidence.mjs --evidence "$EVIDENCE"
 scripts/foundry-verify-server.sh down
 ```
 
-`render-evidence.mjs` is added by pull request #13. Until that file is on the branch you have checked out, `up` still writes `EVIDENCE/run.json` in the shape that script requires.
+`render-evidence.mjs` is `.claude/skills/verify-foundry-importer/scripts/render-evidence.mjs`, on `main`. `up` writes `EVIDENCE/run.json` in the shape that script requires.
 
 Proven journeys: `open-importer`, `druid`, `ex_ampleton`, `luph`, `luph-levelup-manual`, `raelyn`. Import journeys need `druid.pdf`, `ex_ampleton.pdf`, `luph.pdf`, and `raelyn.pdf` in `~/Downloads`. `luph-levelup-manual` uses `luph.pdf`.
 

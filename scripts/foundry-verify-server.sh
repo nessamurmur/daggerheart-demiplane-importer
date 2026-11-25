@@ -143,7 +143,7 @@ print_current() {
 missing_secrets() {
   local missing=0
   if [ ! -f "$FVTT" ]; then
-    echo "Missing $FVTT. The verify skill (pull request #11) is not in this checkout." >&2
+    echo "Missing $FVTT. The verify skill is not in this checkout." >&2
     missing=1
   fi
   if ! python3 "$DOWNLOAD" release-ok "$APP" "$FOUNDRY_VERSION"; then

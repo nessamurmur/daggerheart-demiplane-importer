@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Idempotent cloud-agent install: Node 24, pnpm, repo deps, Chrome, the
 # public Foundryborne 2.10.2 zip, and, when FOUNDRY_R2_TOKEN is set, the
-# Foundry Node zip. Does not start a server. The verify skill is optional:
-# this script is valid on main, where that skill is not present yet.
+# Foundry Node zip. Does not start a server. The verify skill is on main;
+# the harness install below runs when its package-lock is in this checkout.
 # `bash scripts/cloud-agent-install.sh --foundry-cache` runs only the Node zip step.
 set -euo pipefail
 
@@ -168,7 +168,7 @@ hash -r
 
 # pnpm 11 refuses to replace a modules directory installed by an older pnpm unless this is set.
 CI=true pnpm install --frozen-lockfile
-# Playwright for the verify skill. That skill is not on main until its PR merges.
+# Playwright for the verify skill, when this checkout contains it.
 harness=".claude/skills/verify-foundry-importer/scripts"
 if [ -f "$harness/package-lock.json" ]; then
   npm ci --prefix "$harness"
