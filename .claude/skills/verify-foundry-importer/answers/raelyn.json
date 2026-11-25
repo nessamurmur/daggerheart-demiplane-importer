@@ -1,0 +1,23 @@
+{
+  "name": "[Import test] Raelyn",
+  "settings": {
+    "levelupAuto": true
+  },
+  "comparisons": {
+    "*": "foundry"
+  },
+  "expect": {
+    "actor": {
+      "level": 4,
+      "hp": 7,
+      "evasion": 14,
+      "reportStatus": "complete"
+    },
+    "levelupDialog": {
+      "Tier 2": "X__ X_ __ _ X _"
+    },
+    "inVault": [
+      "Uncanny Disguise"
+    ]
+  }
+}

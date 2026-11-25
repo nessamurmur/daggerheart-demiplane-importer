@@ -1,0 +1,41 @@
+{
+  "name": "[Import test] Jen",
+  "experiences": {
+    "Folk hero": 0
+  },
+  "comparisons": {
+    "Evasion": "pdf",
+    "*": "foundry"
+  },
+  "expect": {
+    "actor": {
+      "level": 1,
+      "evasion": 8,
+      "armorScore.max": 4,
+      "thresholds.major": 7,
+      "thresholds.severe": 14,
+      "reportStatus": "complete"
+    },
+    "items": [
+      "Druid",
+      "Warden of Renewal",
+      "Goblin",
+      "Shortstaff",
+      "Round Shield",
+      "Leather Armor"
+    ],
+    "inVault": [],
+    "itemCounts": {
+      "Round Shield": 1,
+      "Leather Armor": 1
+    },
+    "effects": [
+      "PDF import: Evasion"
+    ],
+    "unmatched": [],
+    "loadout": [
+      "Gifted Tracker",
+      "Nature's Tongue"
+    ]
+  }
+}
