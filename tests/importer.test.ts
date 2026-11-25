@@ -292,6 +292,7 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   assert.equal(report.reviewedCharacter.name, "Reviewed name");
   assert.equal(Object.fromEntries(report.reviewedCharacter.source.fields).name, "Source name");
   assert.equal(Object.fromEntries(report.fieldDisposition).ancestry_name, "reported");
+  assert(!report.items.some(i => i.kind === "ancestry"));
   assert.equal(Object.fromEntries(report.verifiedStats)["system.armorScore.max"], 4);
 });
 

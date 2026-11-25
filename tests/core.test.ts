@@ -94,3 +94,34 @@ test("a blank level asks only for the level, and keeps recorded companion traini
   assert(!messages.some(m => /previous companion training/.test(m)), messages.join(" | "));
   assert.equal(c.companion.training.length, 3);
 });
+
+const sources = [
+  { uuid: "Compendium.test.Item.dagger", name: "Test Dagger", type: "weapon", pack: "Weapons" },
+  { uuid: "Compendium.test.Item.staff", name: "Teststaff", type: "weapon", pack: "Weapons" },
+  { uuid: "Compendium.test.Item.armor", name: "Test Armor", type: "armor", pack: "Armors" }
+];
+const selectedFor = (resolutions: ReturnType<typeof resolveEntries>, name: string) => resolutions.find(r => r.entry.name === name)!.selected;
+test("refreshing matches keeps the GM's source choices and matches renamed entries again", () => {
+  const c = character({ primary_weapon_name: "Test Dagger", armor_name: "Test Armor", inventory: "0Teststaff" });
+  const resolutions = resolveEntries(c, sources);
+  assert.equal(selectedFor(resolutions, "Test Dagger"), "Compendium.test.Item.dagger");
+  assert.equal(selectedFor(resolutions, "0Teststaff"), null);
+  for (const r of resolutions.filter(r => ["Test Dagger", "Test Armor"].includes(r.entry.name))) Object.assign(r, { selected: null, chosenFor: r.entry.name });
+  c.entries.find(e => e.name === "0Teststaff")!.name = "Teststaff";
+  c.entries.find(e => e.name === "Test Armor")!.name = "Test armor";
+  const refreshed = resolveEntries(c, sources, resolutions);
+  assert.equal(selectedFor(refreshed, "Test Dagger"), null);
+  assert.equal(selectedFor(refreshed, "Teststaff"), "Compendium.test.Item.staff");
+  assert.equal(selectedFor(refreshed, "Test armor"), "Compendium.test.Item.armor");
+});
+test("an excluded entry keeps its source, so including it again restores it", () => {
+  const c = character({ primary_weapon_name: "Test Dagger", armor_name: "Test Armor" });
+  c.entries.find(e => e.name === "Test Armor")!.include = false;
+  const resolutions = resolveEntries(c, sources);
+  assert.equal(selectedFor(resolutions, "Test Armor"), "Compendium.test.Item.armor");
+  Object.assign(resolutions.find(r => r.entry.name === "Test Dagger")!, { selected: null, chosenFor: "Test Dagger" });
+  c.entries.find(e => e.name === "Test Dagger")!.include = false;
+  const refreshed = resolveEntries(c, sources, resolutions);
+  assert.equal(selectedFor(refreshed, "Test Dagger"), null);
+  assert.equal(selectedFor(refreshed, "Test Armor"), "Compendium.test.Item.armor");
+});

@@ -162,8 +162,11 @@ export function candidatesFor(entry: Entry, candidates: Candidate[]): Candidate[
   }
   return matches.sort((a, b) => a.pack.localeCompare(b.pack) || a.uuid.localeCompare(b.uuid));
 }
-export function resolveEntries(character: ParsedCharacter, candidates: Candidate[]): Resolution[] {
-  return character.entries.filter(e => e.include).map(entry => {
+/** Resolves every entry, included or not. A source the GM chose in `previous` stands while its entry keeps the name it was chosen for. */
+export function resolveEntries(character: ParsedCharacter, candidates: Candidate[], previous: Resolution[] = []): Resolution[] {
+  return character.entries.map(entry => {
+    const chosen = previous.find(r => r.entry.id === entry.id && r.chosenFor === entry.name);
+    if (chosen) return { ...chosen, entry };
     let matches = candidatesFor(entry, candidates);
     if (entry.kind === "subclass" && entry.className) {
       const classUuids = candidates.filter(c => c.type === "class" && normalizeName(c.name) === normalizeName(entry.className!)).map(c => c.uuid);
