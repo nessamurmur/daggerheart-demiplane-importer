@@ -45,6 +45,18 @@ export function companionCheckboxesTaken(levelups: Record<string, any>): string[
   return Object.entries(COMPANION_OPTIONS).flatMap(([key, count]) => Array.from({ length: count }, (_, i) => i + 1).filter(n => selected[2][key]?.[n]).map(n => `${key} #${n}`));
 }
 
+/** Mirrors Foundryborne's updateLevel with automatic level-up on: lowering a companion's level deletes the items its later selections list in `features`, from the partner when `onPartner`. */
+export function lowerCompanionLevel(partner: any, companion: any, level: number): void {
+  const levelups = companion.system.levelData.levelups;
+  for (const key of Object.keys(levelups).filter(k => Number(k) > level)) {
+    for (const feature of levelups[key].selections.flatMap((s: any) => s.features)) {
+      const document = feature.onPartner ? partner : companion;
+      document.items = document.items.filter((i: any) => i.id !== feature.id);
+    }
+    delete levelups[key];
+  }
+}
+
 /** Mirrors Foundryborne's Item.prepareGrantedItems: each linked feature joins its granter's creation. */
 function grantedFeatures(granter: DocumentSource, documents: Record<string, DocumentSource>): DocumentSource[] {
   return (granter.system?.features ?? []).map((link: any) => typeof link === "string" ? link : typeof link?.item === "string" ? link.item : link?.item?.uuid).filter(Boolean).map((uuid: string) => ({
@@ -86,10 +98,14 @@ export function mockRuntime(documents: Record<string, DocumentSource> = {}) {
       if (!allowed("preCreateActor", source)) return undefined;
       const actor = runtime.preview(source);
       actor.id = source._id; actor.uuid = `Actor.${source._id}`;
-      actor.createEmbeddedDocuments = async (type: string, data: any[]) => {
+      actor.items = [];
+      // Like Foundry, a created document keeps its source _id only with keepId.
+      actor.createEmbeddedDocuments = async (type: string, data: any[], options: { keepId?: boolean } = {}) => {
         const kept = (type === "Item" ? data.flatMap(d => [d, ...grantedFeatures(d, documents)]) : data).filter(d => allowed(`preCreate${type}`, d));
         operations.push(...kept.map(d => d.type));
-        return kept.map(d => ({ ...d, id: d._id }));
+        const docs = kept.map(d => ({ ...d, id: options.keepId ? d._id : runtime.id() }));
+        if (type === "Item") actor.items.push(...docs);
+        return docs;
       };
       actor.update = async (data: Record<string, unknown>, options: { diff?: boolean } = {}) => {
         const changes = {};
