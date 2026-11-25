@@ -7,8 +7,8 @@ Foundry VTT module that imports Demiplane PDF character sheets into Foundryborne
 1. Read `docs/review/reviewer.md` (the rubric you will be reviewed against) and `docs/review/evidence-contract.md` (the evidence you must post).
 2. Use `.github/pull_request_template.md`. Every section is required.
 3. Run `pnpm typecheck && pnpm test && pnpm build && node scripts/check-package-readiness.mjs`. The readiness script must finish with no errors.
-4. Anything that changes import behaviour needs the live Foundry journeys in `.claude/skills/verify-foundry-importer`. That skill is pull request #11 and is not on `main` until it merges; use that copy. Its suite is the `journeys.json` entries with status `proven` and kind `open` or `import`: `open-importer`, `druid`, `ex_ampleton`, `luph`, `luph-levelup-manual`, `raelyn`. Cloud agents cannot run it (it needs a Foundry licence and private PDFs on NJ's machine). Write `needs-live-run` in the Verification section with the reason and the journeys you would run, and stop.
-5. Never commit sample PDFs, character data, Foundry licence data, or rules text. Fixtures use synthetic names.
+4. Anything that changes import behaviour needs the live Foundry journeys in `.claude/skills/verify-foundry-importer`. That skill is pull request #11 and is not on `main` until it merges; use that copy. Its suite is the `journeys.json` entries with status `proven` and kind `open` or `import`: `open-importer`, `druid`, `ex_ampleton`, `luph`, `luph-levelup-manual`, `raelyn`. After the suite, write one observation sentence per journey and run `scripts/render-evidence.mjs`. Paste the printed `## Live evidence` block (pass/fail, observation, and screenshots) into the PR description. Cloud agents cannot run the suite (it needs a Foundry licence and private PDFs on NJ's machine). Write `needs-live-run` in the Verification section with the reason and the journeys you would run, and stop.
+5. Never commit sample PDFs, world JSON, Foundry licence data, or rules text. Live screenshots go up as GitHub user-attachments, not as files in the branch. Fixtures use synthetic names. Character names can appear in those screenshots.
 
 ## Shape of the code (keep it)
 
@@ -23,7 +23,7 @@ NJ initiates features. Do not add features nobody asked for. Fixes to known defe
 
 ## Review
 
-Verdicts are posted from the repository owner's account (`nessamurmur`), which also authors the pull requests. GitHub will not accept `APPROVE` or `REQUEST_CHANGES` on those pull requests. The reviewer posts a `COMMENT` review, one marker comment `<!-- dpi-review:v1 ... -->` with `verdict` and `head_sha`, and exactly one `review:*` label. That marker and label are what the merge rule reads. Follow `docs/review/reviewer.md`.
+Verdicts are a `COMMENT` review from either the repository owner's account (`nessamurmur`) or `cursor[bot]`. Both count. `nessamurmur` also authors the pull requests, so GitHub will not accept `APPROVE` or `REQUEST_CHANGES` from that account. The reviewer posts one marker comment `<!-- dpi-review:v1 ... -->` with `verdict` and `head_sha`, and exactly one `review:*` label. That marker and label are what the merge rule reads. Follow `docs/review/reviewer.md`.
 
 ## Live Foundry on a cloud agent
 

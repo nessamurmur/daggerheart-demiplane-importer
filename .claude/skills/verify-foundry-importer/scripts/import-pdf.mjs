@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Journey: import one Demiplane PDF through the real wizard, the way a GM does, and record evidence.
 // Usage:
-//   node import-pdf.mjs --url <URL> --evidence <EVIDENCE> --pdf <file.pdf> [--answers answers.json] [--stop-at edit|review]
+//   node import-pdf.mjs --url <URL> --evidence <EVIDENCE> --pdf <file.pdf> [--answers answers.json] [--journey <id>] [--stop-at edit|review]
 // answers.json (all optional):
 //   { "name": "[Import test] Jen",                 // overrides the character name (keep the [Import test] prefix)
 //     "fields": { "level": 1 },                     // data-bind path -> value, typed into the Character tab inputs
@@ -14,15 +14,19 @@
 //     "settings": { "levelupAuto": false } }        // set Foundryborne's automatic level-up before importing
 // Exit code 0 = journey reached its end state and all expectations held.
 import { session, openImporterFromSidebar, settle, action, tab, worldState, writeJSON, setLevelupAuto, levelupDialogState, levelupHistory, WIZARD } from "./harness.mjs";
+import { assertSlug } from "./evidence.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-const { values: a } = parseArgs({ options: { url: { type: "string" }, evidence: { type: "string" }, pdf: { type: "string" }, answers: { type: "string" }, "stop-at": { type: "string" } } });
+const { values: a } = parseArgs({ options: { url: { type: "string" }, evidence: { type: "string" }, pdf: { type: "string" }, answers: { type: "string" }, "stop-at": { type: "string" }, journey: { type: "string" } } });
 if (!a.url || !a.evidence || !a.pdf) { console.error("need --url --evidence --pdf"); process.exit(2); }
+if (a.journey) { try { assertSlug(a.journey, "--journey"); } catch (e) { console.error(e.message); process.exit(2); } }
 const answers = a.answers ? JSON.parse(fs.readFileSync(a.answers, "utf8")) : {};
 const pdf = path.resolve(a.pdf.replace(/^~/, process.env.HOME));
-const evidence = path.join(a.evidence, `${path.basename(pdf, ".pdf")}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`);
+const evidence = a.journey
+  ? path.join(a.evidence, a.journey)
+  : path.join(a.evidence, `${path.basename(pdf, ".pdf")}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`);
 const failures = [];
 
 const s = await session({ url: a.url, evidence });
@@ -38,8 +42,8 @@ try {
 
   // 1. Upload
   await openImporterFromSidebar(page);
-  await shot("wizard-upload");
   await page.setInputFiles(`${WIZARD} #dpi-file`, pdf);
+  await shot("wizard-upload");
   await action(page, "read").click();
   const readErr = await settle(page);
   if (readErr) throw new Error(`read failed: ${readErr}`);
@@ -95,7 +99,7 @@ try {
       const createErr = await settle(page, 120000);
       if (createErr) throw new Error(`create failed: ${createErr}`);
       await page.waitForTimeout(1500); // let actor sheets open
-      await shot("created");
+      await shot("created-actor-sheet");
       const after = await worldState(page);
       writeJSON(evidence, "world-after.json", after);
       const created = after.filter(x => !before.some(b => b.id === x.id));
@@ -140,7 +144,14 @@ try {
     ? fs.readFileSync(path.join(evidence, "browser-console.log"), "utf8").split("\n").filter(l => l.startsWith("[pageerror]")) : [];
   if (pageErrors.length) log("page errors:", pageErrors);
   log(failures.length ? `FAIL\n- ${failures.join("\n- ")}` : "PASS");
-  writeJSON(evidence, "result.json", { pdf, pass: failures.length === 0, failures, pageErrors });
+  writeJSON(evidence, "result.json", {
+    journey: a.journey ?? path.basename(pdf, ".pdf"),
+    kind: "import",
+    pdfName: path.basename(pdf),
+    pass: failures.length === 0,
+    failures,
+    pageErrors,
+  });
   await s.close();
   process.exitCode = failures.length ? 1 : 0;
 }

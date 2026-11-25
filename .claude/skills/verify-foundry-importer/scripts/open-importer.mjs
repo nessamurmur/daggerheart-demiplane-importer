@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 // Journey: open the wizard the ways a GM does and fail on any uncaught page error.
-// Usage: node open-importer.mjs --url <URL> --evidence <EVIDENCE>
+// Usage: node open-importer.mjs --url <URL> --evidence <EVIDENCE> [--journey open-importer]
 // Steps: sidebar button (first open) -> close -> macro API open -> sidebar again while open (must not duplicate).
-import { session, openImporterFromSidebar, dismissPopups, WIZARD, MODULE_ID } from "./harness.mjs";
+import { session, openImporterFromSidebar, dismissPopups, writeJSON, WIZARD, MODULE_ID } from "./harness.mjs";
+import { assertSlug } from "./evidence.mjs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-const { values: a } = parseArgs({ options: { url: { type: "string" }, evidence: { type: "string" } } });
+const { values: a } = parseArgs({ options: { url: { type: "string" }, evidence: { type: "string" }, journey: { type: "string" } } });
 if (!a.url || !a.evidence) { console.error("need --url --evidence"); process.exit(2); }
-const evidence = path.join(a.evidence, `open-importer-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`);
+if (a.journey) { try { assertSlug(a.journey, "--journey"); } catch (e) { console.error(e.message); process.exit(2); } }
+const journey = a.journey ?? "open-importer";
+const evidence = a.journey
+  ? path.join(a.evidence, a.journey)
+  : path.join(a.evidence, `open-importer-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`);
 const failures = [], pageErrors = [];
 
 const s = await session({ url: a.url, evidence });
@@ -17,7 +22,7 @@ page.on("pageerror", e => pageErrors.push(String(e.stack ?? e).split("\n").slice
 try {
   await openImporterFromSidebar(page);
   await page.waitForTimeout(1000);
-  await shot("first-open-sidebar");
+  await shot("sidebar-wizard");
   log("after first open:", { windows: await page.locator(WIZARD).count(), front: await page.evaluate(() => ui.activeWindow?.id ?? null) });
 
   await dismissPopups(page); // the GPU warning can arrive late and cover the close button
@@ -36,12 +41,13 @@ try {
   log("after reopen while open:", { windows: count, front });
   if (count !== 1) failures.push(`expected one wizard window, found ${count}`);
   if (front !== MODULE_ID) failures.push(`wizard is not the front window (front=${front})`);
-  await shot("reopen-while-open");
+  await shot("single-window");
 } catch (e) {
   failures.push(e.message); await shot("failure").catch(() => {});
 } finally {
   if (pageErrors.length) failures.push(...pageErrors.map(e => `uncaught page error: ${e}`));
   log(failures.length ? `FAIL\n- ${failures.join("\n- ")}` : "PASS");
+  writeJSON(evidence, "result.json", { journey, kind: "open", pass: failures.length === 0, failures, pageErrors });
   await s.close();
   process.exitCode = failures.length ? 1 : 0;
 }

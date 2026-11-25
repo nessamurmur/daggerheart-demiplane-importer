@@ -23,7 +23,7 @@ This directory is the maintained source for verifying what a GM can do with the 
 
 ## Proof and skip reporting
 
-- Capture the action (screenshots per step) and the resulting Foundry state (`world-after.json`), not only the success screen.
+- Capture the action (stable screenshot names per step; see `SKILL.md`) and the resulting Foundry state (`world-after.json`), not only the success screen. Publish the screenshots and one observation per journey with `scripts/render-evidence.mjs`.
 - Assert that pre-existing actors are unchanged after any create or failure.
 - Record the PDF, answers file, entry point and Foundry build with the result.
 - If a precondition is missing (e.g. no multiclass sample PDF), report the journey as not run and why. Do not report it as verified through another path.
@@ -47,6 +47,8 @@ S=.claude/skills/verify-foundry-importer/scripts
 node $S/suite.mjs --list
 node $S/suite.mjs --url "$URL" --evidence "$EVIDENCE"
 node $S/suite.mjs --url "$URL" --evidence "$EVIDENCE" --only open-importer,druid
+# one sentence per journey in $EVIDENCE/<id>/observation.txt, then:
+node $S/render-evidence.mjs --evidence "$EVIDENCE"
 ```
 
 Keep the map honest with `/maintain-verification-skill` when the wizard or Foundryborne version changes.

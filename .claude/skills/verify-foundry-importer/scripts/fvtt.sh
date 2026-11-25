@@ -38,14 +38,21 @@ launch)
   cp -a "$BASE/Config" "$BASE/Data" "$run/"
   rm -rf "$run/Config/options.json.lock"
   ln -sfn "$REPO/dist/$MODULE_ID" "$run/Data/modules/$MODULE_ID"
-  python3 - "$run" "$port" "$WORLD_ID" "$APP" <<'PY'
+  sha="$(git -C "$REPO" rev-parse HEAD)"
+  # run.json fields match runMeta() in evidence.mjs. No paths: the renderer copies this into the PR block.
+  python3 - "$run" "$port" "$WORLD_ID" "$APP" "$EVIDENCE/$id" "$REPO" "$id" "$sha" <<'PY'
 import json, sys, os
-run, port, world, app = sys.argv[1:]
+run, port, world, app, evidence, repo, run_id, sha = sys.argv[1:]
 p = f"{run}/Config/options.json"; o = json.load(open(p))
 o.update(dataPath=run, port=int(port), upnp=False, localHostname="localhost", noUpdate=True)
 json.dump(o, open(p, "w"), indent=2)
 sysj = json.load(open(f"{run}/Data/systems/daggerheart/system.json"))
 core = json.load(open(f"{app}/resources/app/package.json"))["release"]
+mod = json.load(open(os.path.join(repo, "module.json")))
+os.makedirs(evidence, exist_ok=True)
+json.dump({"runId": run_id, "foundry": f'{core["generation"]}.{core["build"]}',
+           "foundryborne": sysj["version"], "moduleVersion": mod["version"], "headSha": sha},
+          open(os.path.join(evidence, "run.json"), "w"), indent=2)
 os.makedirs(f"{run}/Data/worlds/{world}", exist_ok=True)
 json.dump({"id": world, "title": "DPI Verify", "system": "daggerheart", "systemVersion": sysj["version"],
            "coreVersion": f'{core["generation"]}.{core["build"]}', "description": "Throwaway world for importer verification"},
