@@ -28,7 +28,9 @@ The questions are "does this function keep its promise for every input in the bo
 
 ## Sync commit
 
-Sync commit: `PENDING`
+Sync commit: `656ba2790adb37ab7ffeedb760439c931547741b`
+
+That commit adds these checks. A following commit that only fills in this line does not change the covered files. If `git diff 656ba2790adb37ab7ffeedb760439c931547741b -- src/core.ts src/pdf.ts src/levelups.ts src/importer.ts module.json` is empty, this record is current.
 
 Covered files at that commit:
 
