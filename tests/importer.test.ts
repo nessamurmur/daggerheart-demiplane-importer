@@ -548,6 +548,54 @@ test("a multiclass and a subclass upgrade are recorded in different tiers", asyn
   assert.deepEqual(plan.levelHistory?.unplaced, []);
 });
 
+const multiclassCharacter = (extra: Record<string, string>) => {
+  const c = character({ subclass_name_1: "First Path", subclass_class_1: "Fixture Class", subclass_name_2: "Other Path", subclass_class_2: "Other Class", ...extra });
+  c.entries.find(e => e.name === "Other Class")!.domains = ["sage"];
+  return c;
+};
+
+test("a multiclass below the first tier that offers it blocks the import until the level is raised", async () => {
+  const { runtime } = mockRuntime();
+  const low = multiclassCharacter({ level: "4", ...proficiency(2) });
+  const blocked = await buildPlan(low, resolveEntries(low, []), runtime);
+  const blocking = blocked.issues.filter(i => i.blocking).map(i => i.message);
+  assert.equal(blocking.length, 1);
+  assert.match(blocking[0], /Other Class/);
+  assert.match(blocking[0], /level 5/);
+  assert.match(blocking[0], /raise the level/i);
+  assert.match(blocking[0], /remove the multiclass/i);
+  blocked.reviewed = true;
+  await assert.rejects(executePlan(blocked, runtime), /blocking issue/);
+
+  const raised = multiclassCharacter({ level: "5", ...proficiency(3) });
+  const plan = await buildPlan(raised, resolveEntries(raised, []), runtime);
+  assert.deepEqual(plan.issues.filter(i => i.blocking), []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t3 level 5"]);
+});
+
+test("a multiclass is recorded below level 5 when the actor's tiers offer it earlier", async () => {
+  const c = multiclassCharacter({ level: "3", ...proficiency(2) });
+  const { runtime } = mockRuntime();
+  const preview = runtime.preview;
+  runtime.preview = source => {
+    const actor = preview(source);
+    actor.system.levelupTiers.tiers[2].options.multiclass = { type: "multiclass", checkboxSelections: 2, minCost: 2 };
+    return actor;
+  };
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(plan.issues.filter(i => i.blocking), []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t2 level 2"]);
+});
+
+test("a multiclass keeps its slot when the PDF shows more stat gains than the tiers hold", async () => {
+  const c = multiclassCharacter({ level: "5", hp_max: "12", evasion: "11", ...proficiency(3) });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  assert.deepEqual(plan.issues.filter(i => i.blocking), []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t3 level 5"]);
+  assert(plan.levelHistory!.unplaced.every(p => p.includes("Hit Point")));
+});
+
 test("a PDF Proficiency below the level's minimum is reported and never stored as a base below 1", async () => {
   const c = character({ level: "3" });
   const { runtime } = mockRuntime();

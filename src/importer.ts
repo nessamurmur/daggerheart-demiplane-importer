@@ -223,8 +223,10 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   if (vaulted.length) issues.push({ code: "loadout-limit", message: `Foundryborne’s loadout holds ${limit} domain cards, so ${vaulted.join(", ")} ${vaulted.length === 1 ? "goes" : "go"} to the vault. To vault a different card, go back to the details and check its “In vault” box.` });
   const baseline = previewActor(expanded);
   const { stats, notes } = statEvidence(c, baseline, previewActor(expanded.filter(s => CLASS_TYPES.includes(s.type) || CLASS_TYPES.includes(s.system.granter?.type))));
-  const history = inferLevelups(levelupEvidence(c, expanded, baseline, stats, actorId));
+  const evidence = levelupEvidence(c, expanded, baseline, stats, actorId);
+  const history = inferLevelups(evidence);
   actorData.system.levelData.levelups = history.levelups;
+  if (evidence.multiclass && !Object.values(history.levelups).some(r => r.selections.some(s => s.type === "multiclass"))) issues.push(error(unrecordedMulticlass(evidence)));
   if (runtime.levelupAuto) {
     for (const [trait, bonus] of Object.entries(history.bonuses.traits)) actorData.system.traits[trait].value -= bonus;
     for (const [id, bonus] of Object.entries(history.bonuses.experiences)) actorData.system.experiences[id].value -= bonus;
@@ -312,6 +314,14 @@ function levelupEvidence(c: ParsedCharacter, items: DocumentSource[], baseline: 
     subclasses: items.filter(s => s.type === "subclass").map(s => ({ name: s.name, uuid: itemUuid(s), featureState: s.system.featureState ?? 1, isMulticlass: !!s.system.isMulticlass })),
     multiclass: multiclass ? { name: multiclass.name, uuid: uuid(multiclass), itemUuid: itemUuid(multiclass), domain: multiclass.system.domains?.[0] ?? null, subclassUuid: multiclassSubclass ? uuid(multiclassSubclass) : null } : null
   };
+}
+
+/** Foundryborne offers multiclass again to a character whose history lacks it, and refuses the second class if it is taken. */
+function unrecordedMulticlass(e: LevelupEvidence): string {
+  const name = e.multiclass!.name, first = Math.min(...e.tiers.filter(t => t.levels.start >= 2 && Object.values(t.options).some(o => o.type === "multiclass")).map(t => t.levels.start));
+  if (!Number.isFinite(first)) return `Multiclass “${name}” cannot be recorded: no level-up tier offers multiclassing. Remove the multiclass on the Content tab.`;
+  if (e.level < first) return `Multiclass “${name}” needs level ${first} or higher: the level-up tiers first offer multiclassing at level ${first}, and this character is level ${e.level}. Raise the level on the Character tab, or remove the multiclass on the Content tab.`;
+  return `Multiclass “${name}” does not fit the level-up history: no tier up to level ${e.level} has a free multiclass option. Raise the level on the Character tab, or remove the multiclass on the Content tab.`;
 }
 
 function historyIssue(history: LevelupHistory, notes: string[], levelupAuto: boolean): Issue {
