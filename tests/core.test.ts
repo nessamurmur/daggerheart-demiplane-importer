@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { candidatesFor, checked, escapeHTML, finiteNumber, fitCompanionTraining, normalizeName, parseFields, resolveEntries, setPath, validateCharacter } from "../src/core.ts";
+import { candidatesFor, checked, escapeHTML, finiteNumber, fitCompanionTraining, normalizeName, parseFields, resolveEntries, setPath, sourceOptions, validateCharacter } from "../src/core.ts";
 import { character } from "./helpers.ts";
 
 test("zero, negatives, missing values and malformed numbers remain distinct", () => {
@@ -54,6 +54,51 @@ test("matches apostrophes, but leaves duplicate publishers ambiguous", () => {
   const candidates = [{ uuid: "Compendium.a.Item.1", name: "Nature’s Tongue", type: "domainCard", pack: "SRD", system: { domain: "sage" } }, { uuid: "Compendium.b.Item.2", name: "Nature's Tongue", type: "domainCard", pack: "Purchased", system: { domain: "sage" } }];
   assert.equal(candidatesFor(card, candidates).length, 2);
   assert.equal(resolveEntries(c, candidates).find(r => r.entry.id === card.id)!.selected, undefined);
+});
+test("an unmatched class, subclass, ancestry or community waits for the GM; other unmatched items stay editable", () => {
+  const c = character({ class: "Summoner", subclass_name_1: "Necromancy", subclass_foundation_1: "Yes", ancestry_name: "Inferis", community_name: "Slyborne", "domain_card_name.0.0": "Blood Spike", "domain_card_domain.0.0": "blood", primary_weapon_name: "Small Revolver", inventory: "0Greatstaff" });
+  const candidates = [
+    { uuid: "Compendium.srd.Item.infernis", name: "Infernis", type: "ancestry", pack: "Ancestries" },
+    { uuid: "Compendium.srd.Item.slyborne", name: "Slyborne", type: "community", pack: "Communities" },
+    { uuid: "Compendium.srd.Item.greatstaff", name: "Greatstaff", type: "weapon", pack: "Weapons" }
+  ];
+  const selected = Object.fromEntries(resolveEntries(c, candidates).map(r => [r.entry.name, r.selected]));
+  assert.deepEqual(selected, { Summoner: undefined, Necromancy: undefined, Inferis: undefined, Slyborne: "Compendium.srd.Item.slyborne", "Blood Spike": null, "Small Revolver": null, "0Greatstaff": null });
+});
+test("with no exact match, the source list puts close names first, nearest first, and only of the entry's type", () => {
+  const c = character({ ancestry_name: "Inferis" });
+  const ancestry = c.entries.find(e => e.kind === "ancestry")!;
+  const candidates = [
+    { uuid: "Compendium.srd.Item.faerie", name: "Faerie", type: "ancestry", pack: "Ancestries" },
+    { uuid: "Compendium.homebrew.Item.inferi", name: "Inferi", type: "ancestry", pack: "Homebrew" },
+    { uuid: "Compendium.srd.Item.clank", name: "Clank", type: "ancestry", pack: "Ancestries" },
+    { uuid: "Compendium.srd.Item.infernis", name: "Infernis", type: "ancestry", pack: "Ancestries" },
+    { uuid: "Compendium.srd.Item.card", name: "Infernis", type: "domainCard", pack: "Domains" }
+  ];
+  const list = () => sourceOptions(ancestry, candidates).map(o => [o.candidate.name, o.match]);
+  assert.deepEqual(list(), [["Infernis", "suggested"], ["Inferi", "suggested"], ["Clank", null], ["Faerie", null]]);
+  ancestry.name = "Infernis";
+  assert.deepEqual(list(), [["Infernis", "exact"], ["Clank", null], ["Faerie", null], ["Inferi", null]]);
+});
+test("a suggestion is at most one edit per four letters away", () => {
+  const c = character({ community_name: "Seaborne" });
+  const community = c.entries.find(e => e.kind === "community")!;
+  const candidates = [
+    { uuid: "Compendium.srd.Item.warborne", name: "Warborne", type: "community", pack: "Communities" },
+    { uuid: "Compendium.srd.Item.slyborne", name: "Slyborne", type: "community", pack: "Communities" }
+  ];
+  assert.deepEqual(sourceOptions(community, candidates).map(o => [o.candidate.name, o.match]), [["Slyborne", "suggested"], ["Warborne", null]]);
+});
+test("inventory text is offered close equipment names, and still defaults to an editable item", () => {
+  const c = character({ inventory: "0Greatstaff" });
+  const loot = c.entries.find(e => e.inventoryText)!;
+  const candidates = [
+    { uuid: "Compendium.srd.Item.greatstaff", name: "Greatstaff", type: "weapon", pack: "Weapons" },
+    { uuid: "Compendium.srd.Item.rations", name: "Rations", type: "loot", pack: "Loot" },
+    { uuid: "Compendium.srd.Item.class", name: "Greatstaff", type: "class", pack: "Classes" }
+  ];
+  assert.deepEqual(sourceOptions(loot, candidates).map(o => [o.candidate.uuid, o.match]), [["Compendium.srd.Item.greatstaff", "suggested"], ["Compendium.srd.Item.rations", null]]);
+  assert.equal(resolveEntries(c, candidates).find(r => r.entry.id === loot.id)!.selected, null);
 });
 test("unknown populated fields are reported and HTML is escaped", () => {
   const c = character({ extra_special_rule: "Something new", notes: "<img src=x onerror=alert(1)>" });

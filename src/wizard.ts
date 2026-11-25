@@ -1,5 +1,5 @@
 import { MODULE_ID, TRAITS, type Candidate, type Entry, type ImportReport, type ParsedCharacter, type Resolution, type ResolvedImportPlan } from "./types.ts";
-import { candidatesFor, escapeHTML as esc, finiteNumber, fitCompanionTraining, getPath, resolveEntries, setPath, validateCharacter } from "./core.ts";
+import { escapeHTML as esc, finiteNumber, fitCompanionTraining, getPath, resolveEntries, setPath, sourceOptions, validateCharacter } from "./core.ts";
 import { buildPlan, executePlan, foundryRuntime, loadCatalog, reportJSON, type ImportRuntime } from "./importer.ts";
 import { readPdf } from "./pdf.ts";
 
@@ -84,10 +84,7 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
     const resolution = this.resolutions.find(r => r.entry.id === e.id);
     const current = resolution?.selected;
     const options: [string, string][] = [["unresolved", "Choose a content source…"], ["pdf", "Editable PDF item"]];
-    const kinds = e.inventoryText ? ["loot", "consumable", "weapon", "armor"] : [e.kind];
-    const candidates = this.candidates.filter(c => kinds.includes(c.type));
-    const exact = new Set(candidatesFor(e, candidates).map(c => c.uuid));
-    options.push(...[...candidates].sort((a, b) => Number(exact.has(b.uuid)) - Number(exact.has(a.uuid)) || a.name.localeCompare(b.name)).map(c => [c.uuid, `${exact.has(c.uuid) ? "✓ " : ""}${c.name} — ${c.pack}`] as [string, string]));
+    options.push(...sourceOptions(e, this.candidates).map(({ candidate: c, match }) => [c.uuid, `${match === "exact" ? "✓ " : match === "suggested" ? "Suggested: " : ""}${c.name} — ${c.pack}`] as [string, string]));
     const p = `entries.${i}`;
     const sourceSelector = `<label class="dpi-field dpi-wide"><span>Source for ${esc(e.name)}</span><select data-source="${e.id}" aria-label="Source for ${esc(e.name)}">${options.map(([v, label]) => `<option value="${esc(v)}" ${(current === undefined ? "unresolved" : current ?? "pdf") === v ? "selected" : ""}>${esc(label)}</option>`).join("")}</select></label>`;
     let detail = "";

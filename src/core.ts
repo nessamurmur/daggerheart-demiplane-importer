@@ -149,8 +149,22 @@ export function parseFields(fields: Fields, fileName = "character.pdf", fingerpr
   return character;
 }
 
+const kindsOf = (entry: Entry): string[] => entry.inventoryText ? ["weapon", "armor", "loot", "consumable"] : [entry.kind];
+/** Without one of these the character loses rules and features, so an unmatched one waits for the GM. */
+const IDENTITY_KINDS: Entry["kind"][] = ["class", "subclass", "ancestry", "community"];
+
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) row[j] = Math.min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + Number(a[i - 1] !== b[j - 1]));
+    previous = row;
+  }
+  return previous[b.length];
+}
+
 export function candidatesFor(entry: Entry, candidates: Candidate[]): Candidate[] {
-  const kinds = entry.inventoryText ? ["weapon", "armor", "loot", "consumable"] : [entry.kind];
+  const kinds = kindsOf(entry);
   let matches = candidates.filter(c => kinds.includes(c.type) && normalizeName(c.name) === normalizeName(entry.name));
   if (entry.domain) {
     const constrained = matches.filter(c => !c.system?.domain || normalizeName(c.system.domain) === normalizeName(entry.domain!));
@@ -161,6 +175,13 @@ export function candidatesFor(entry: Entry, candidates: Candidate[]): Candidate[
     if (constrained.length) matches = constrained;
   }
   return matches.sort((a, b) => a.pack.localeCompare(b.pack) || a.uuid.localeCompare(b.uuid));
+}
+export function sourceOptions(entry: Entry, candidates: Candidate[]): { candidate: Candidate; match: "exact" | "suggested" | null }[] {
+  const exact = candidatesFor(entry, candidates), name = normalizeName(entry.name), kinds = kindsOf(entry);
+  const others = candidates.filter(c => kinds.includes(c.type) && !exact.includes(c)).sort((a, b) => a.name.localeCompare(b.name));
+  const distance = (c: Candidate) => { const other = normalizeName(c.name); return editDistance(name, other) / Math.max(name.length, other.length); };
+  const suggested = exact.length ? [] : others.filter(c => distance(c) <= 0.25).sort((a, b) => distance(a) - distance(b));
+  return [...exact.map(candidate => ({ candidate, match: "exact" as const })), ...suggested.map(candidate => ({ candidate, match: "suggested" as const })), ...others.filter(c => !suggested.includes(c)).map(candidate => ({ candidate, match: null }))];
 }
 /** Resolves every entry, included or not. A source the GM chose in `previous` stands while its entry keeps the name it was chosen for. */
 export function resolveEntries(character: ParsedCharacter, candidates: Candidate[], previous: Resolution[] = []): Resolution[] {
@@ -173,7 +194,7 @@ export function resolveEntries(character: ParsedCharacter, candidates: Candidate
       const linked = matches.filter(c => classUuids.includes(c.system?.linkedClass));
       if (linked.length) matches = linked;
     }
-    return { entry, candidates: matches, selected: matches.length === 1 ? matches[0].uuid : matches.length === 0 ? null : undefined };
+    return { entry, candidates: matches, selected: matches.length === 1 ? matches[0].uuid : matches.length === 0 && !IDENTITY_KINDS.includes(entry.kind) ? null : undefined };
   });
 }
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, reportJSON, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID, TRAITS } from "../src/types.ts";
-import { character, companionCheckboxesTaken, LEVEL_TIERS, lowerCompanionLevel, mockRuntime } from "./helpers.ts";
+import { character, companionCheckboxesTaken, editableResolutions, LEVEL_TIERS, lowerCompanionLevel, mockRuntime } from "./helpers.ts";
 
 const selections = (plan: { actorData: any }): any[] => Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => r.selections);
 /** What Foundryborne's level-up dialog reads to mark a checkbox as taken: tier, option, and checkbox number, per level. */
@@ -12,7 +12,7 @@ const taken = (plan: { actorData: any }) => Object.fromEntries(Object.entries<an
 test("planning is read-only and stat decisions are required", async () => {
   const c = character({ evasion: "8" });
   const { runtime, created } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.equal(created.length, 0);
   assert.equal(plan.comparisons.find(x => x.label === "Evasion")!.calculated, 10);
   assert.equal(plan.comparisons[0].choice, null);
@@ -54,10 +54,25 @@ test("matched items preserve rules, effects, source identity and character state
   assert.equal(weapon.folder, undefined); assert.equal(weapon.ownership, undefined);
   assert.equal(document.system.equipped, false);
 });
+test("two exact matches stay a choice instead of becoming an editable item", async () => {
+  const c = character();
+  const candidates = [
+    { uuid: "Compendium.one.Item.ancestry", name: "Fixture Ancestry", type: "ancestry", pack: "One" },
+    { uuid: "Compendium.two.Item.ancestry", name: "Fixture Ancestry", type: "ancestry", pack: "Two" }
+  ];
+  const resolutions = editableResolutions(c, candidates);
+  const ancestry = resolutions.find(r => r.entry.kind === "ancestry")!;
+  assert.equal(ancestry.candidates.length, 2);
+  assert.equal(ancestry.selected, undefined);
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, resolutions, runtime);
+  assert(plan.issues.some(i => i.blocking && i.message === "Choose a content source for “Fixture Ancestry”."));
+  assert.equal(plan.itemSources.some(s => s.type === "ancestry"), false);
+});
 test("unregistered domains become descriptive features, never an unrelated domain", async () => {
   const c = character({ "domain_card_name.0.0": "Future card", "domain_card_domain.0.0": "future", "domain_card_type.0.0": "spell", "domain_card_recall.0.0": "1" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const card = plan.itemSources.find(s => s.name === "Future card")!;
   assert.equal(card.type, "feature"); assert.equal(card.flags[MODULE_ID].original.domain, "future");
   assert(plan.issues.some(i => i.code === "unsupported-domain"));
@@ -65,14 +80,14 @@ test("unregistered domains become descriptive features, never an unrelated domai
 test("known-domain editable cards require level and recall cost", async () => {
   const c = character({ "domain_card_name.0.0": "Missing details", "domain_card_domain.0.0": "sage" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert(plan.issues.some(i => i.blocking && i.message.includes("card level")));
 });
 test("multiclass links and feature selection are explicit", async () => {
   const c = character({ level: "5", subclass_name_1: "First Path", subclass_class_1: "Fixture Class", subclass_name_2: "Other Path", subclass_class_2: "Other Class" });
   c.entries.find(e => e.name === "Other Class")!.domains = ["sage"];
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const other = plan.itemSources.find(s => s.name === "Other Class")!, sub = plan.itemSources.find(s => s.name === "Other Path")!;
   assert.equal(other.system.isMulticlass, true);
   assert.equal(sub.system.linkedClass, `Actor.${plan.actorData._id}.Item.${other._id}`);
@@ -88,7 +103,7 @@ test("mixed ancestry uses only the selected primary and secondary grants", async
     "Item.b": { name: "B", type: "ancestry", system: { features: [{ type: "secondary", item: "Item.f2" }] } },
     "Item.f1": { name: "Primary", type: "feature", system: {} }, "Item.f2": { name: "Secondary", type: "feature", system: {} }
   });
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const ancestry = plan.itemSources.find(s => s.type === "ancestry")!;
   assert.equal(ancestry.name, "Mixed"); assert.deepEqual(ancestry.system.features.map((f: any) => f.item), ["Item.f1", "Item.f2"]);
 });
@@ -100,7 +115,7 @@ test("PDF corrections use differences, including native armor effect data", () =
 });
 test("failed item creation rolls back only the newly created actor", async () => {
   const c = character(); const { runtime, created } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   const create = runtime.createActor;
   runtime.createActor = async source => { const actor = await create(source); actor.createEmbeddedDocuments = async () => []; return actor; };
   await assert.rejects(executePlan(plan, runtime), /declined to add/);
@@ -108,7 +123,7 @@ test("failed item creation rolls back only the newly created actor", async () =>
 });
 test("cleanup failure is returned with the exact remaining document", async () => {
   const c = character(); const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   const create = runtime.createActor;
   runtime.createActor = async source => { const actor = await create(source); actor.createEmbeddedDocuments = async () => { throw new Error("offline"); }; actor.delete = async () => { throw new Error("still offline"); }; return actor; };
   await assert.rejects(executePlan(plan, runtime), (e: any) => e.importReport.cleanupFailures.length === 1 && e.message.includes("Cleanup"));
@@ -117,7 +132,7 @@ test("cleanup failure is returned with the exact remaining document", async () =
 async function reviewedPlan(c = character(), documents: Record<string, any> = {}) {
   const mock = mockRuntime(documents);
   const candidates = Object.entries(documents).map(([uuid, d]) => ({ uuid, name: d.name, type: d.type, pack: "Test", system: {} }));
-  const plan = await buildPlan(c, resolveEntries(c, candidates), mock.runtime);
+  const plan = await buildPlan(c, editableResolutions(c, candidates), mock.runtime);
   assert(!plan.issues.some(i => i.blocking));
   for (const comparison of plan.comparisons) comparison.choice = "foundry";
   plan.reviewed = true;
@@ -199,7 +214,7 @@ test("a rollback delete that Foundry declines is reported with the actor it left
 test("successful import creates classes first and reports every populated source field", async () => {
   const c = character({ extra: "unknown", "experience_name.0": "Scout", "experience_bonus.0": "0" });
   const { runtime, operations } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   const result = await executePlan(plan, runtime);
   assert.equal(operations[0], "class"); assert.equal(result.report.status, "complete");
   assert.equal(Object.fromEntries(result.report.fieldDisposition).extra, "reported");
@@ -216,7 +231,7 @@ test("inaccessible compendiums do not prevent use of accessible content", async 
 });
 test("GM access is checked at both planning and creation", async () => {
   const c = character(); const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   runtime.isGM = false;
   await assert.rejects(buildPlan(c, [], runtime), /Only a GM/);
   await assert.rejects(executePlan(plan, runtime), /Only a GM/);
@@ -225,7 +240,7 @@ test("GM access is checked at both planning and creation", async () => {
 test("creation detects a doubled shield bonus even when the preview agreed with the PDF", async () => {
   const c = character({ armor: "4" });
   const { runtime, created } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   assert(!plan.comparisons.some(c => c.path === "system.armorScore.max"));
   const create = runtime.createActor;
   runtime.createActor = async source => { const actor = await create(source); actor.system.armorScore.max = 5; return actor; };
@@ -237,7 +252,7 @@ test("higher-level companion training stores a base that replays to the reviewed
   const c = character({ level: "5" });
   c.companion = { enabled: true, name: "Test companion", evasion: 12, stressMax: 4, stress: 1, attackName: "Bite", damageDice: "d8", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 3 }, { name: "Climbing", value: 3 }], notes: "Reviewed test notes", training: [{ type: "evasion", data: [] }, { type: "stress", data: [] }, { type: "experience", data: [] }, { type: "vicious", data: ["damage"] }] };
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert(!plan.issues.some(i => i.blocking));
   const s = plan.companionData!.system;
   assert.equal(s.evasion + 2, c.companion.evasion);
@@ -253,7 +268,7 @@ test("companion training marks the checkboxes Foundryborne's companion level-up 
   const c = character({ level: "5" });
   c.companion = { enabled: true, name: "Test companion", evasion: 14, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d8", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training: [{ type: "evasion", data: [] }, { type: "stress", data: [] }, { type: "evasion", data: [] }, { type: "vicious", data: ["damage"] }] };
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(companionCheckboxesTaken(plan.companionData!.system.levelData.levelups), ["vicious #1", "stress #1", "evasion #1", "evasion #2"]);
 });
 
@@ -261,7 +276,7 @@ test("lowering the companion's level removes the partner feature its training gr
   const c = character({ level: "4" });
   c.companion = { enabled: true, name: "Test companion", evasion: 12, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d6", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training: [{ type: "evasion", data: [] }, { type: "creatureComfort", data: [] }, { type: "stress", data: [] }] };
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   for (const comparison of plan.comparisons) comparison.choice ??= "foundry";
   const { actor, companion } = await executePlan(plan, runtime);
   const comfort = "DAGGERHEART.APPLICATIONS.Levelup.actions.creatureComfort.name";
@@ -276,7 +291,7 @@ test("lowering the companion's level removes the partner feature its training gr
 test("unsupported playtest class domains remain recorded without breaking native domain lookups", async () => {
   const c = character({ "domain_card_name.0.0": "Playtest card", "domain_card_domain.0.0": "future" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const main = plan.itemSources.find(s => s.type === "class")!;
   assert.deepEqual(main.system.domains, []);
   assert.deepEqual(main.flags[MODULE_ID].unsupportedDomains, ["future"]);
@@ -287,7 +302,7 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   c.name = "Reviewed name";
   c.entries.find(e => e.kind === "ancestry")!.include = false;
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   const { report } = await executePlan(plan, runtime);
   assert.equal(report.reviewedCharacter.name, "Reviewed name");
   assert.equal(Object.fromEntries(report.reviewedCharacter.source.fields).name, "Source name");
@@ -299,7 +314,7 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
 test("the report and source fields saved on the actor match the downloaded report key for key", async () => {
   const c = character({ level: "1", "experience_name.0": "Scout", "experience_bonus.0": "0" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime); plan.reviewed = true;
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
   const { actor, report } = await executePlan(plan, runtime);
   const downloaded = JSON.parse(JSON.stringify(report, null, 2));
   assert.deepEqual(actor.flags[MODULE_ID].report, downloaded);
@@ -316,7 +331,7 @@ function withCards(fields: Record<string, string>, cardLevels: number[], others:
     candidates.push({ uuid, name, type: "domainCard", pack: "Test", system: { domain: "sage" } });
   });
   const c = character(fields);
-  return { c, resolutions: resolveEntries(c, candidates), ...mockRuntime(documents) };
+  return { c, resolutions: editableResolutions(c, candidates), ...mockRuntime(documents) };
 }
 /** Foundryborne's School of Knowledge, whose feature at each step grants a domain card through its description alone. */
 const schoolOfKnowledge = {
@@ -403,7 +418,7 @@ test("with automatic level-up off, the history is recorded and the PDF's final v
 test("tier 3 history respects each tier's options, checkbox limits, and level slots", async () => {
   const c = character({ level: "6", hp_max: "9", "proficiency.1": "Yes", "proficiency.2": "Yes", "proficiency.3": "Yes", subclass_name_1: "Fixture Path", subclass_class_1: "Fixture Class", subclass_specialization_1: "Yes" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert(!plan.issues.some(i => i.blocking));
   assert.deepEqual(selections(plan).map(s => `t${s.tier} ${s.optionKey} #${s.checkboxNr}`).sort(), ["t2 hitPoint #1", "t2 hitPoint #2", "t3 hitPoint #1", "t3 proficiency #1", "t3 subclass #1"]);
   const levelups = plan.actorData.system.levelData.levelups;
@@ -429,7 +444,7 @@ test("level-up history follows the tier table of the actor's level-up dialog, in
     actor.system.levelupTiers.tiers[2].options.proficiency = { type: "proficiency", checkboxSelections: 1, minCost: 1, value: 1 };
     return actor;
   };
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(selections(plan).filter(s => s.type === "proficiency").map(s => `t${s.tier} level ${s.level} #${s.checkboxNr}`), ["t2 level 2 #1"]);
   assert.equal(plan.calculatedStats["system.proficiency"], 3);
 });
@@ -444,7 +459,7 @@ test("each Foundry preview receives its own copy of the items, because Foundry's
     for (const item of source.items) item.type = "consumed";
     return actor;
   };
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.equal(plan.calculatedStats["system.evasion"], 9);
   assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Evasion", 10, 9]]);
 });
@@ -459,7 +474,7 @@ test("stat picks count only the PDF value above Foundry's calculation, including
     if (source.items?.some((i: any) => i.type === "ancestry")) actor.system.resources.hitPoints.max += 1;
     return actor;
   };
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(selections(plan).map(s => s.type), ["hitPoint"]);
   assert.equal(plan.calculatedStats["system.resources.hitPoints.max"], 8);
   assert.equal(plan.calculatedStats["system.evasion"], 9);
@@ -476,7 +491,7 @@ test("an item penalty is named with its sign when the PDF's stat is above Foundr
     if (source.items?.some((i: any) => i.type === "armor")) actor.system.evasion -= 1;
     return actor;
   };
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(selections(plan).map(s => s.type), ["evasion"]);
   assert.equal(plan.calculatedStats["system.evasion"], 10);
   const message = plan.issues.find(i => i.code === "level-history")!.message;
@@ -529,7 +544,7 @@ test("a first fit that stacks both tier-4 trait picks on level 8 is undone, so b
 test("marked traits are recorded in the current tier, so Foundry keeps them marked", async () => {
   const c = character({ level: "5", agility: "2", strength: "1", agility_marked: "Yes", strength_marked: "Yes", ...proficiency(3) });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(taken(plan)[5], ["t3 trait #1 agility+strength"]);
   plan.reviewed = true;
   const { actor } = await executePlan(plan, runtime);
@@ -540,7 +555,7 @@ test("a multiclass and a subclass upgrade are recorded in different tiers", asyn
   const c = character({ level: "8", ...proficiency(4), subclass_name_1: "First Path", subclass_class_1: "Fixture Class", subclass_specialization_1: "Yes", subclass_name_2: "Other Path", subclass_class_2: "Other Class" });
   c.entries.find(e => e.name === "Other Class")!.domains = ["sage"];
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const tierOf = (type: string) => selections(plan).filter(s => s.type === type).map(s => s.tier);
   const [multiclass, subclass] = [tierOf("multiclass"), tierOf("subclass")];
   assert.deepEqual([multiclass.length, subclass.length], [1, 1]);
@@ -557,7 +572,7 @@ const multiclassCharacter = (extra: Record<string, string>) => {
 test("a multiclass below the first tier that offers it blocks the import until the level is raised", async () => {
   const { runtime } = mockRuntime();
   const low = multiclassCharacter({ level: "4", ...proficiency(2) });
-  const blocked = await buildPlan(low, resolveEntries(low, []), runtime);
+  const blocked = await buildPlan(low, editableResolutions(low), runtime);
   const blocking = blocked.issues.filter(i => i.blocking).map(i => i.message);
   assert.equal(blocking.length, 1);
   assert.match(blocking[0], /Other Class/);
@@ -568,7 +583,7 @@ test("a multiclass below the first tier that offers it blocks the import until t
   await assert.rejects(executePlan(blocked, runtime), /blocking issue/);
 
   const raised = multiclassCharacter({ level: "5", ...proficiency(3) });
-  const plan = await buildPlan(raised, resolveEntries(raised, []), runtime);
+  const plan = await buildPlan(raised, editableResolutions(raised), runtime);
   assert.deepEqual(plan.issues.filter(i => i.blocking), []);
   assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t3 level 5"]);
 });
@@ -582,7 +597,7 @@ test("a multiclass is recorded below level 5 when the actor's tiers offer it ear
     actor.system.levelupTiers.tiers[2].options.multiclass = { type: "multiclass", checkboxSelections: 2, minCost: 2 };
     return actor;
   };
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(plan.issues.filter(i => i.blocking), []);
   assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t2 level 2"]);
 });
@@ -590,7 +605,7 @@ test("a multiclass is recorded below level 5 when the actor's tiers offer it ear
 test("a multiclass keeps its slot when the PDF shows more stat gains than the tiers hold", async () => {
   const c = multiclassCharacter({ level: "5", hp_max: "12", evasion: "11", ...proficiency(3) });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(plan.issues.filter(i => i.blocking), []);
   assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t3 level 5"]);
   assert(plan.levelHistory!.unplaced.every(p => p.includes("Hit Point")));
@@ -599,7 +614,7 @@ test("a multiclass keeps its slot when the PDF shows more stat gains than the ti
 test("a PDF Proficiency below the level's minimum is reported and never stored as a base below 1", async () => {
   const c = character({ level: "3" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.equal(plan.actorData.system.proficiency, 1);
   assert.deepEqual(plan.comparisons.map(x => [x.label, x.pdf, x.calculated]), [["Proficiency", 1, 2]]);
   const issue = plan.issues.find(i => i.code === "proficiency-below-minimum");
@@ -610,7 +625,7 @@ test("a PDF Proficiency below the level's minimum is reported and never stored a
 test("with no Proficiency marked above level 1, the tier achievements are recorded and Foundry's result is proposed", async () => {
   const c = character({ level: "5", "proficiency.0": "" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const levelups = plan.actorData.system.levelData.levelups;
   assert.deepEqual([levelups[2].achievements.proficiency, levelups[5].achievements.proficiency], [1, 1]);
   assert.deepEqual(selections(plan).filter(s => s.type === "proficiency"), []);
@@ -675,7 +690,7 @@ test("domain cards beyond the starting cards, level cards, and extra-card picks 
 test("PDF evidence that cannot be recorded as a level-up choice is listed with its reason", async () => {
   const c = character({ level: "5", ...proficiency(5), "experience_name.0": "Tracking", "experience_bonus.0": "3", "experience_name.1": "Climbing", "experience_bonus.1": "2", "experience_name.2": "Cooking", "experience_bonus.2": "2" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const message = plan.issues.find(i => i.code === "level-history")!.message;
   assert.match(message, /Level 5: 1 new experience missing from the PDF, \+1 Proficiency\./);
   assert.match(message, /These choices from the PDF were not recorded: \+1 to Tracking \(no other raised experience to pair with\), \+1 Proficiency \(no room in the level tiers\)\./);
@@ -685,7 +700,7 @@ test("PDF evidence that cannot be recorded as a level-up choice is listed with i
 test("level 1 characters have no level-up history, even with a marked trait or extra Hit Points", async () => {
   const c = character({ hp_max: "7", agility_marked: "Yes" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   assert.deepEqual(plan.actorData.system.levelData.levelups, {});
   assert(!plan.issues.some(i => i.code === "level-history"));
   assert.deepEqual(plan.comparisons.map(x => [x.path, x.pdf, x.calculated]), [["system.resources.hitPoints.max", 7, 6]]);
@@ -694,7 +709,7 @@ test("level 1 characters have no level-up history, even with a marked trait or e
 test("the downloaded report parses to the report and prints each field pair on one line", async () => {
   const c = character({ "hope.0": "Yes", notes: "a \"quoted\" note\nover two lines" });
   const { runtime } = mockRuntime();
-  const plan = await buildPlan(c, resolveEntries(c, []), runtime);
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
   const report = makeReport(plan, "test");
   const text = reportJSON(report);
   assert.deepEqual(JSON.parse(text), JSON.parse(JSON.stringify(report)));
