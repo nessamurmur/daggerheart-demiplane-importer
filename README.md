@@ -64,6 +64,17 @@ node scripts/check-package-readiness.mjs
 
 Pull requests run typecheck, tests, the build, and that package-readiness lint. The required status check is named `ci`.
 
+## Formal verification
+
+Checks that do not need Foundry run on every pull request. From a checkout of this repository:
+
+```sh
+pnpm install
+pnpm verify
+```
+
+`pnpm verify` is deterministic. It uses fast-check 4.11.0, pinned in `pnpm-lock.yaml`, on the real parser, matcher, level-up placer, report, and import transaction, and it checks `module.json`. The same command is the GitHub Actions job `formal-verification` on every pull request to `main` and every push to `main`. What each check covers, the bounds, and how to update a check is in `.cursor/skills/verify-importer-contracts/SKILL.md`.
+
 The build produces `dist/daggerheart-demiplane-importer/`, a standalone `artifacts/module.json`, and `artifacts/daggerheart-demiplane-importer-0.1.0.zip`. The two manifest copies are identical. The ZIP includes the PDF.js library, worker, Apache license, module code and documentation. It excludes tests and sample PDFs.
 
 Optional private sample tests use `druid.pdf` and `ex_ampleton.pdf` from `$DEMIPLANE_SAMPLE_DIR`, defaulting to `~/Downloads`:

@@ -1,0 +1,34 @@
+# Branch protection / rulesets: require the status check named "formal-verification".
+# That string is this job's name. The workflow title is only the group label on a pull request.
+name: Formal verification
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formal-verification:
+    name: formal-verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install pinned package manager and dependencies
+        run: |
+          npm install --global pnpm@11.19.0
+          pnpm install --frozen-lockfile
+      - name: Verify importer contracts
+        run: pnpm verify
