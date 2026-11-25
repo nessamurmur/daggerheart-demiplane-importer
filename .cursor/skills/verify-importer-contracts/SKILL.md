@@ -10,7 +10,7 @@ description: >-
 
 # Verify importer contracts
 
-`pnpm verify` checks promises the import keeps for every input inside a fixed bound. It does not open Foundry. Live end-to-end stays on NES-144 and runs only for a release candidate.
+`pnpm verify` checks promises the import keeps for every input inside a fixed bound. It does not open Foundry. A release candidate is a pull request that bumps `version` in `module.json` and `package.json` together. Live Foundry end-to-end (NES-144, evidence item E4 in `docs/review/evidence-contract.md`) is required only on that pull request. Every other pull request, including class R and a change to import behaviour, is gated by this `formal-verification` job plus the tests and evidence in that contract.
 
 ## Run it
 
@@ -97,7 +97,7 @@ The process still exits 0. The readiness lint records the same fact as INFO `com
 ## What is not covered
 
 - `buildPlan`, catalog loading, and Foundryborne stat preparation. Those need the system.
-- A real Foundry world, the wizard, or GM chrome. That is NES-144.
+- A real Foundry world, the wizard, or GM chrome. That is NES-144, and `docs/review/evidence-contract.md` requires it only on a pull request that bumps the version.
 - Whether `inferLevelups` finds a layout whenever one exists.
 - `sourceOptions` fuzzy ranking, beyond the exact-match rule in `candidatesFor`.
 - Private character PDFs. Do not add any.

@@ -49,7 +49,7 @@ Then spend tokens only on the judgment items below. Cite a source URL from secti
 | CSS | Everything under `.dpi-*`; works in Foundry's light and dark themes or documents that it does not |
 | Security | PDF-derived strings reach the DOM only through `escapeHTML`; no `eval`/`new Function`; PDF JavaScript never runs (`isEvalSupported: false`); no network calls (README promises none) |
 | Performance | Catalog scan reads indexes, not full documents, and only when the wizard opens; PDF parsed once; large PDFs bounded (30 MB, 50 pages today) |
-| Console | A live run produces no deprecation warnings attributed to this module and no `[pageerror]` (the verify skill's `browser-console.log`) |
+| Console | On a release candidate (a version bump), a live run produces no deprecation warnings attributed to this module and no `[pageerror]` (the verify skill's `browser-console.log`). Other pull requests leave this row as not run (`docs/review/evidence-contract.md`) |
 
 ## C. Listing and content policy (licensing guide, AI policy, DPCGL)
 

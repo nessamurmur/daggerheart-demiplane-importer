@@ -62,11 +62,11 @@ pnpm build
 node scripts/check-package-readiness.mjs
 ```
 
-Pull requests run typecheck, tests, the build, and that package-readiness lint. The required status check is named `ci`.
+Pull requests run typecheck, tests, the build, and that package-readiness lint as the job named `ci`. Pull requests into `main` also run the formal verification below as the job named `formal-verification`. Both are green before merge. The hand-written steps and the merge checklist are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Formal verification
 
-Checks that do not need Foundry run on every pull request. From a checkout of this repository:
+Checks that do not need Foundry run on every pull request into `main`. From a checkout of this repository:
 
 ```sh
 pnpm install

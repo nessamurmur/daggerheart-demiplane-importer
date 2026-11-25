@@ -1,6 +1,6 @@
 # Importer verification map
 
-This directory is the maintained source for verifying what a GM can do with the Demiplane PDF importer in real Foundry. Read this index, then use the matching feature file as the recipe. Commands are in `../SKILL.md`. Journey status lives in `../journeys.json`. The suite runs every `proven` open/import entry from that file.
+This directory is the maintained source for verifying what a GM can do with the Demiplane PDF importer in real Foundry. Read this index, then use the matching feature file as the recipe. Commands are in `../SKILL.md`. Journey status lives in `../journeys.json`. The suite runs every `proven` open/import entry from that file. That live run is required only on a release-candidate pull request, one that bumps the version. Other pull requests use `pnpm verify` (`docs/review/evidence-contract.md`).
 
 ## Status tags
 
