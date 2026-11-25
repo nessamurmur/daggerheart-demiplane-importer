@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Idempotent cloud-agent install: Node 24, pnpm, repo deps, Chrome, and the
-# public Foundryborne 2.10.2 zip. Does not download Foundry VTT and does not
-# start a server. The verify skill is optional: this script is valid on main,
-# where that skill is not present yet.
+# Idempotent cloud-agent install: Node 24, pnpm, repo deps, Chrome, the
+# public Foundryborne 2.10.2 zip, and, when FOUNDRY_R2_TOKEN is set, the
+# Foundry Node zip. Does not start a server. The verify skill is optional:
+# this script is valid on main, where that skill is not present yet.
+# `bash scripts/cloud-agent-install.sh --foundry-cache` runs only the Node zip step.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,6 +20,96 @@ case "$ROOT" in
   */.*) echo "FOUNDRY_VERIFY_ROOT contains a dot-directory; Foundry will 404 its own files" >&2; exit 1 ;;
   "$REPO"|"$REPO"/*) echo "FOUNDRY_VERIFY_ROOT must stay outside the git checkout" >&2; exit 1 ;;
 esac
+
+# Same object #21's timed URL stores at $ROOT/cache/FoundryVTT-Node-14.370.zip.
+FOUNDRY_R2_ACCOUNT_ID="${FOUNDRY_R2_ACCOUNT_ID:-fc29815e85508db8c14ed124b0511b81}"
+FOUNDRY_R2_BUCKET="${FOUNDRY_R2_BUCKET:-foundry-cache}"
+# Region is auto, via curl --aws-sigv4 "aws:amz:auto:s3".
+FOUNDRY_R2_ENDPOINT="${FOUNDRY_R2_ENDPOINT:-https://${FOUNDRY_R2_ACCOUNT_ID}.r2.cloudflarestorage.com}"
+FOUNDRY_R2_KEY="${FOUNDRY_R2_KEY:-FoundryVTT-Node-14.370.zip}"
+FOUNDRY_NODE_ARCHIVE_BYTES="${FOUNDRY_NODE_ARCHIVE_BYTES:-150182237}"
+FOUNDRY_NODE_ARCHIVE_SHA256="${FOUNDRY_NODE_ARCHIVE_SHA256:-e891a46b2878745b38dd8c28e843d763f83e69aa14bdbd3156edd8dafaabe846}"
+
+archive_matches() {
+  python3 - "$1" "$FOUNDRY_NODE_ARCHIVE_BYTES" "$FOUNDRY_NODE_ARCHIVE_SHA256" <<'PY'
+import hashlib, os, sys
+path, expected_size, expected_sha = sys.argv[1:]
+if not os.path.isfile(path) or os.path.getsize(path) != int(expected_size):
+    sys.exit(1)
+digest = hashlib.sha256()
+with open(path, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+sys.exit(0 if digest.hexdigest() == expected_sha else 1)
+PY
+}
+
+# curl -fsS --retry 3 --aws-sigv4 "aws:amz:auto:s3" --user "$FOUNDRY_R2_TOKEN"
+# The token stays in the environment and a mode-600 config file, not on argv.
+cache_foundry_node_zip() {
+  mkdir -p "$ROOT/cache"
+  local dest="$ROOT/cache/$(basename "$FOUNDRY_R2_KEY")"
+  if archive_matches "$dest"; then
+    echo "Foundry archive already cached ($(basename "$dest"))"
+    return 0
+  fi
+  # Do not expand the token in the shell: bash -x would print it.
+  if ! python3 -c 'import os,sys; sys.exit(0 if os.environ.get("FOUNDRY_R2_TOKEN") else 1)'; then
+    echo "FOUNDRY_R2_TOKEN is not set; skipping Foundry archive download"
+    return 0
+  fi
+  local partial cfg url status tracing=0
+  partial="$(mktemp "$ROOT/cache/foundry-r2.XXXXXX")"
+  cfg="$(mktemp)"
+  chmod 600 "$partial" "$cfg"
+  url="${FOUNDRY_R2_ENDPOINT%/}/${FOUNDRY_R2_BUCKET}/${FOUNDRY_R2_KEY}"
+  case $- in *x*) tracing=1 ;; esac
+  set +x
+  python3 - "$cfg" "$url" "$partial" <<'PY'
+import os, sys
+cfg, url, dest = sys.argv[1:]
+token = os.environ.get("FOUNDRY_R2_TOKEN", "")
+if not token or "\n" in token or "\r" in token:
+    sys.stderr.write("FOUNDRY_R2_TOKEN is missing or not a single line.\n")
+    sys.exit(1)
+def quote(value):
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+with open(cfg, "w", encoding="utf-8") as handle:
+    handle.write("\n".join([
+        "fail",
+        "silent",
+        "show-error",
+        "retry = 3",
+        'aws-sigv4 = "aws:amz:auto:s3"',
+        f"user = {quote(token)}",
+        f"url = {quote(url)}",
+        f"output = {quote(dest)}",
+        "",
+    ]))
+PY
+  if [ "$tracing" -eq 1 ]; then set -x; fi
+  status=0
+  curl --config "$cfg" || status=$?
+  rm -f "$cfg"
+  if [ "$status" -ne 0 ]; then
+    rm -f "$partial"
+    echo "Foundry archive download failed." >&2
+    return 1
+  fi
+  if ! archive_matches "$partial"; then
+    rm -f "$partial"
+    echo "Foundry archive hash does not match; deleted the download." >&2
+    return 1
+  fi
+  mv "$partial" "$dest"
+  chmod 600 "$dest"
+  echo "cached $(basename "$dest")"
+}
+
+if [ "${1:-}" = "--foundry-cache" ]; then
+  cache_foundry_node_zip
+  exit 0
+fi
 
 fetch_node_tarball() {
   local tar="/tmp/node-v${NODE_VERSION}-linux-x64.tar.xz"
@@ -120,5 +211,7 @@ if ! system_ok "$zip" "$FOUNDRYBORNE_VERSION"; then
   system_ok "$zip" "$FOUNDRYBORNE_VERSION" \
     || { echo "Foundryborne zip is not daggerheart ${FOUNDRYBORNE_VERSION}" >&2; exit 1; }
 fi
+
+cache_foundry_node_zip
 
 echo "cloud-agent install ok (node $(/usr/local/bin/node -v), pnpm $(pnpm -v), Foundryborne ${FOUNDRYBORNE_VERSION} cached)"
