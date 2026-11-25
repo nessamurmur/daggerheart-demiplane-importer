@@ -131,6 +131,35 @@ test("up stops a stale licence server and still names a missing secret", () => {
   }
 });
 
+test("a detached child does not keep the session lock", async () => {
+  const verifyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dpi-lock-"));
+  const out = path.join(verifyRoot, "probe.out");
+  const pidfile = path.join(verifyRoot, "probe.pid");
+  const sleeper = path.join(verifyRoot, "sleeper.py");
+  const launcher = path.join(verifyRoot, "launch.sh");
+  fs.writeFileSync(sleeper, `import os, time\nopen(${JSON.stringify(out)}, "w").write("yes" if os.path.exists("/proc/self/fd/9") else "no")\ntime.sleep(30)\n`);
+  fs.writeFileSync(launcher, `#!/bin/bash\nsetsid python3 ${JSON.stringify(sleeper)} >/dev/null 2>&1 </dev/null &\necho $! > ${JSON.stringify(pidfile)}\n`, { mode: 0o755 });
+  let pid = "";
+  try {
+    const result = run("bash", [server, "lock-probe", launcher], { FOUNDRY_VERIFY_ROOT: verifyRoot });
+    assert.equal(result.status, 0, result.stderr);
+    let text = "";
+    const started = Date.now();
+    while (Date.now() - started < 2000) {
+      if (fs.existsSync(out)) text = fs.readFileSync(out, "utf8");
+      if (text) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    pid = fs.existsSync(pidfile) ? fs.readFileSync(pidfile, "utf8").trim() : "";
+    assert.equal(text, "no");
+    assert.equal(alive(pid), true, "detached child exited before the lock check");
+    const flock = run("flock", ["-w", "2", path.join(verifyRoot, "session.lock"), "-c", "true"], {});
+    assert.equal(flock.status, 0, flock.stderr);
+  } finally {
+    if (pid && alive(pid)) process.kill(Number(pid), "SIGKILL");
+  }
+});
+
 test("server script syntax", () => {
   const result = run("bash", ["-n", "scripts/foundry-verify-server.sh"], {});
   assert.equal(result.status, 0, result.stderr);

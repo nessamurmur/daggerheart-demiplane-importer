@@ -171,6 +171,14 @@ acquire_lock() {
   fi
 }
 
+# fvtt.sh backgrounds Foundry with setsid, so the node process inherits this
+# shell's file descriptors. The session lock is fd 9. A child that keeps it
+# still holds the lock after `up` exits, and `down` then waits until Foundry
+# itself exits. Close fd 9 in the child before it starts anything long-lived.
+run_without_session_lock() {
+  (exec 9>&-; exec "$@")
+}
+
 load_node() {
   # fvtt.sh sources nvm. If an nvm directory is already on PATH, nvm keeps that
   # slot instead of putting Node 24 first, and /exec-daemon/node (22) wins.
@@ -285,7 +293,7 @@ ensure_samples() {
 launch_server() {
   local out code newest label
   set +e
-  out="$("$FVTT" launch 2>"$ROOT/launch.err")"
+  out="$(run_without_session_lock "$FVTT" launch 2>"$ROOT/launch.err")"
   code=$?
   set -e
   scrub "$ROOT/launch.err"
@@ -424,6 +432,14 @@ case "${1:-}" in
   up) cmd_up ;;
   down) cmd_down "${2:-}" ;;
   status) cmd_status ;;
+  # Test hook. Hold the session lock, run the arguments the way Foundry is
+  # launched, and exit. The child must not still hold the lock afterwards.
+  lock-probe)
+    refuse_root
+    shift
+    acquire_lock
+    run_without_session_lock "$@"
+    ;;
   *)
     echo "usage: scripts/foundry-verify-server.sh up|down [RUN]|status" >&2
     exit 1
