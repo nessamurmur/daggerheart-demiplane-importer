@@ -133,11 +133,11 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
     });
     this.element.querySelectorAll("[data-source]").forEach((input: HTMLSelectElement) => {
       const entry = this.character!.entries.find(e => e.id === input.dataset.source)!;
-      let resolution = this.resolutions.find(r => r.entry.id === entry.id);
-      if (!resolution) { resolution = { entry, candidates: [], selected: undefined }; this.resolutions.push(resolution); }
+      const resolution = this.resolutions.find(r => r.entry.id === entry.id)!;
+      const selected = entry.asFeature ? null : input.value === "unresolved" ? undefined : input.value === "pdf" ? null : input.value;
+      if (selected !== resolution.selected) resolution.chosenFor = selected === undefined ? undefined : entry.name;
       resolution.entry = entry;
-      resolution.selected = input.value === "unresolved" ? undefined : input.value === "pdf" ? null : input.value;
-      if (entry.asFeature) resolution.selected = null;
+      resolution.selected = selected;
     });
     this.element.querySelectorAll("[data-training]").forEach((input: HTMLSelectElement) => {
       const value = input.value;
@@ -168,10 +168,6 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
       } else if (action === "tab") { this.capture(); this.tab = target.dataset.tab!; }
       else if (action === "preview") {
         this.capture();
-        this.resolutions = this.character!.entries.filter(e => e.include).map(entry => {
-          const old = this.resolutions.find(r => r.entry.id === entry.id);
-          return old ? { ...old, entry } : resolveEntries({ ...this.character!, entries: [entry] }, this.candidates)[0];
-        });
         const missing = validateCharacter(this.character!);
         if (missing.length) throw new Error(missing.map(i => i.message).join(" "));
         this.busy = "Calculating character stats…"; await this.render();
@@ -191,7 +187,7 @@ export class ImportWizard extends foundry.applications.api.ApplicationV2 {
         console.info(`[${MODULE_ID}] Import complete`, result.report);
       } else if (action === "back") { this.stage = "edit"; }
       else if (action === "restart") { this.character = undefined; this.plan = undefined; this.report = undefined; this.resolutions = []; this.stage = "upload"; }
-      else if (action === "rematch") { this.capture(); this.resolutions = resolveEntries(this.character!, this.candidates); }
+      else if (action === "rematch") { this.capture(); this.resolutions = resolveEntries(this.character!, this.candidates, this.resolutions); }
       else if (action === "add-experience") { this.capture(); this.character!.experiences.push({ name: "", value: null }); }
       else if (action === "remove-experience") { this.capture(); this.character!.experiences.splice(Number(target.dataset.index), 1); }
       else if (action === "add-companion-experience") { this.capture(); this.character!.companion.experiences.push({ name: "", value: null }); }
