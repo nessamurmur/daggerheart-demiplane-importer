@@ -1,0 +1,151 @@
+{
+  "pdfDir": "~/Downloads",
+  "journeys": [
+    {
+      "id": "open-importer",
+      "status": "proven",
+      "feature": "open-importer",
+      "kind": "open",
+      "summary": "Sidebar open, close, API reopen, single window, no page errors."
+    },
+    {
+      "id": "druid",
+      "status": "proven",
+      "feature": "import-character",
+      "kind": "import",
+      "pdf": "druid.pdf",
+      "answers": "druid.json",
+      "summary": "Jen level 1: Preserve PDF Evasion, fully matched SRD content."
+    },
+    {
+      "id": "ex_ampleton",
+      "status": "proven",
+      "feature": "content-matching",
+      "kind": "import",
+      "pdf": "ex_ampleton.pdf",
+      "answers": "ex_ampleton.json",
+      "summary": "Ex Ampleton: mixed matches, unregistered blood domain, duplicate dagger."
+    },
+    {
+      "id": "oliver",
+      "status": "recipe",
+      "feature": "import-character",
+      "kind": "recipe",
+      "pdf": "oliver.pdf",
+      "answers": "oliver.json",
+      "summary": "Create stays disabled: blocking issue on incomplete Small Revolver attack/hand fields. Needs answers that complete or exclude that entry before it can be proven."
+    },
+    {
+      "id": "luph",
+      "status": "proven",
+      "feature": "advanced-characters",
+      "kind": "import",
+      "pdf": "luph.pdf",
+      "answers": "luph.json",
+      "summary": "LuPh level 4 snapshot: traits, vault card, Tier 2 level-up dialog."
+    },
+    {
+      "id": "luph-levelup-manual",
+      "status": "proven",
+      "feature": "advanced-characters",
+      "kind": "import",
+      "pdf": "luph.pdf",
+      "answers": "luph-levelup-manual.json",
+      "summary": "LuPh with levelupAuto false: manual level-up path still imports."
+    },
+    {
+      "id": "raelyn",
+      "status": "proven",
+      "feature": "advanced-characters",
+      "kind": "import",
+      "pdf": "raelyn.pdf",
+      "answers": "raelyn.json",
+      "summary": "Raelyn level 4 snapshot: evasion, vault card, Tier 2 dialog."
+    },
+    {
+      "id": "druid-stats-preserve",
+      "status": "proven",
+      "feature": "stat-reconciliation",
+      "kind": "alias",
+      "aliasOf": "druid",
+      "summary": "Covered by the druid journey: Evasion preserved via PDF import Active Effect."
+    },
+    {
+      "id": "match-override",
+      "status": "recipe",
+      "feature": "content-matching",
+      "kind": "recipe",
+      "summary": "Force Twisted Dagger to Editable PDF item, then create."
+    },
+    {
+      "id": "match-refresh",
+      "status": "recipe",
+      "feature": "content-matching",
+      "kind": "recipe",
+      "summary": "Rename an entry and click Refresh content matches."
+    },
+    {
+      "id": "stats-foundry",
+      "status": "recipe",
+      "feature": "stat-reconciliation",
+      "kind": "recipe",
+      "summary": "Druid with comparisons all foundry and expect evasion 10, no effects."
+    },
+    {
+      "id": "stats-required",
+      "status": "recipe",
+      "feature": "stat-reconciliation",
+      "kind": "recipe",
+      "summary": "Leave a Resolve select on Choose…; create must error and make no actor."
+    },
+    {
+      "id": "import-reject",
+      "status": "recipe",
+      "feature": "import-character",
+      "kind": "recipe",
+      "summary": "Upload a non-PDF; read fails; world unchanged."
+    },
+    {
+      "id": "import-persist",
+      "status": "recipe",
+      "feature": "import-character",
+      "kind": "recipe",
+      "summary": "After create, rejoin and confirm actor plus reportStatus remain."
+    },
+    {
+      "id": "open-gm-only",
+      "status": "recipe",
+      "feature": "open-importer",
+      "kind": "recipe",
+      "summary": "Join as a Player; no sidebar button; API warns."
+    },
+    {
+      "id": "adv-companion",
+      "status": "recipe",
+      "feature": "advanced-characters",
+      "kind": "recipe",
+      "summary": "Enable companion on Ancestry tab; second companion actor linked both ways."
+    },
+    {
+      "id": "adv-mixed-ancestry",
+      "status": "recipe",
+      "feature": "advanced-characters",
+      "kind": "recipe",
+      "summary": "Enable mixed ancestry; one combined ancestry item. Prior ad-hoc evidence exists; no answers file yet."
+    },
+    {
+      "id": "adv-multiclass",
+      "status": "recipe",
+      "feature": "advanced-characters",
+      "kind": "recipe",
+      "summary": "Add class and subclass on Content tab. Prior ad-hoc evidence exists; no answers file yet."
+    },
+    {
+      "id": "val",
+      "status": "recipe",
+      "feature": "import-character",
+      "kind": "recipe",
+      "summary": "val.pdf has passed in evidence, but answers/val.json is not in the repo yet."
+    }
+  ]
+}

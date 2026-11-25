@@ -1,0 +1,27 @@
+{
+  "name": "[Import test] LuPh (manual level-up)",
+  "comparisons": {
+    "*": "foundry"
+  },
+  "expect": {
+    "actor": {
+      "level": 4,
+      "hp": 6,
+      "stress": 6,
+      "proficiency": 2,
+      "reportStatus": "complete",
+      "traits.agility": 2,
+      "traits.strength": 0,
+      "traits.finesse": 3,
+      "traits.instinct": 1,
+      "traits.presence": 2,
+      "traits.knowledge": 1
+    },
+    "levelupDialog": {
+      "Tier 2": "X__ X_ __ X X _"
+    }
+  },
+  "settings": {
+    "levelupAuto": false
+  }
+}

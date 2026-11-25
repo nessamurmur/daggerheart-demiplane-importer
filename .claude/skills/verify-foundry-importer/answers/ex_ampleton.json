@@ -1,0 +1,44 @@
+{
+  "name": "[Import test] Ex Ampleton",
+  "fields": {
+    "level": 1
+  },
+  "comparisons": {
+    "*": "foundry"
+  },
+  "experiences": {
+    "A little unhinged": 0,
+    "Creepy": 0
+  },
+  "expect": {
+    "actor": {
+      "level": 1,
+      "reportStatus": "complete",
+      "traits.agility": 0,
+      "traits.strength": 0,
+      "traits.finesse": 0,
+      "traits.instinct": 0,
+      "traits.presence": 0,
+      "traits.knowledge": 0
+    },
+    "items": [
+      "Clank",
+      "Warborne",
+      "Twisted Dagger",
+      "Leather Armor",
+      "Minor Health Potion"
+    ],
+    "itemCounts": {
+      "Twisted Dagger": 1
+    },
+    "unmatched": [
+      "Summoner",
+      "Necromancy",
+      "Power Through Pain",
+      "Blood Spike",
+      "0Greatstaff",
+      "a harmless spirit trapped inside a glass bottle"
+    ],
+    "effects": []
+  }
+}

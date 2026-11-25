@@ -1,0 +1,7 @@
+{
+  "name": "verify-foundry-importer-harness",
+  "private": true,
+  "type": "module",
+  "description": "Browser harness for verifying the Demiplane importer in a real Foundry instance. Uses system Chrome; no browser download.",
+  "dependencies": { "playwright-core": "1.64.1" }
+}
