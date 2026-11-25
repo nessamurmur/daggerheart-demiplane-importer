@@ -2,6 +2,8 @@
 // Run every proven journey against a live verify instance.
 // Usage:
 //   node suite.mjs --url <URL> --evidence <EVIDENCE> [--only id,id] [--list]
+// Each journey writes $EVIDENCE/<journey-id>/ with stable screenshot names.
+// Then write observation.txt in each journey directory and run render-evidence.mjs.
 // Reads ../journeys.json. Skips recipe entries. Exit 0 only if every selected journey exits 0.
 import fs from "node:fs";
 import path from "node:path";
@@ -51,17 +53,17 @@ for (const j of runnable) {
   let cmd, args;
   if (j.kind === "open") {
     cmd = process.execPath;
-    args = [path.join(here, "open-importer.mjs"), "--url", a.url, "--evidence", a.evidence];
+    args = [path.join(here, "open-importer.mjs"), "--url", a.url, "--evidence", a.evidence, "--journey", j.id];
   } else if (j.kind === "import") {
     const pdf = path.join(pdfDir, j.pdf);
     const answers = path.join(skillRoot, "answers", j.answers);
     if (!fs.existsSync(pdf)) {
-      results.push({ id: j.id, ok: false, detail: `missing PDF ${pdf}` });
+      results.push({ id: j.id, ok: false, detail: "missing PDF" });
       console.error(`FAIL missing PDF ${pdf}`);
       continue;
     }
     if (!fs.existsSync(answers)) {
-      results.push({ id: j.id, ok: false, detail: `missing answers ${answers}` });
+      results.push({ id: j.id, ok: false, detail: "missing answers" });
       console.error(`FAIL missing answers ${answers}`);
       continue;
     }
@@ -72,6 +74,7 @@ for (const j of runnable) {
       "--evidence", a.evidence,
       "--pdf", pdf,
       "--answers", answers,
+      "--journey", j.id,
     ];
   } else {
     results.push({ id: j.id, ok: false, detail: `unsupported kind ${j.kind}` });
@@ -80,7 +83,7 @@ for (const j of runnable) {
 
   const r = spawnSync(cmd, args, { stdio: "inherit", env: process.env });
   const ok = r.status === 0;
-  results.push({ id: j.id, ok, detail: ok ? "PASS" : `exit ${r.status ?? "signal " + r.signal}` });
+  results.push({ id: j.id, ok, detail: ok ? "PASS" : `exit ${r.status ?? "signal " + (r.signal ?? "")}`, dir: j.id });
   if (!ok) {
     console.error(`FAIL ${j.id}: ${results.at(-1).detail}`);
     break;
@@ -92,9 +95,15 @@ console.log("\n=== suite summary ===");
 for (const r of results) console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.id}  ${r.detail}`);
 const skippedRecipes = registry.journeys.filter(j => j.status === "recipe").length;
 console.log(`ran ${results.length}; failed ${failed.length}; recipe (not run) ${skippedRecipes}`);
+const ran = results.filter(r => r.dir);
+if (ran.length) {
+  console.log("\nWrite one observation sentence to:");
+  for (const r of ran) console.log(`  ${path.join(a.evidence, r.dir, "observation.txt")}`);
+  console.log(`Then: node ${path.join(here, "render-evidence.mjs")} --evidence ${a.evidence}`);
+}
 fs.mkdirSync(a.evidence, { recursive: true });
 fs.writeFileSync(
-  path.join(a.evidence, `suite-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.json`),
+  path.join(a.evidence, "suite.json"),
   JSON.stringify({ pass: failed.length === 0, results, skippedRecipes }, null, 2),
 );
 process.exit(failed.length ? 1 : 0);

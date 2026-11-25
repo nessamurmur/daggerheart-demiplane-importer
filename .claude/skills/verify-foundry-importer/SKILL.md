@@ -19,7 +19,7 @@ Never drive the user's Sqyre world (Witherwild) or any server this skill did not
 | `~/foundry-verify/evidence/<id>/` | Proof. Survives `stop`. |
 | `~/Downloads/druid.pdf`, `~/Downloads/ex_ampleton.pdf` | Private sample PDFs (gitignored; never copy them into the repo). Other real exports there: `luph.pdf`, `oliver.pdf`, `raelyn.pdf`, `val.pdf`. |
 
-In the repo: `scripts/fvtt.sh` (server lifecycle), `scripts/harness.mjs` (Playwright helpers), `scripts/import-pdf.mjs` (import journey), `scripts/open-importer.mjs` (open/close/reopen, fails on page errors), `scripts/suite.mjs` (every proven journey), `journeys.json` (proven vs recipe registry), `answers/*.json` (per-PDF review answers and expected end state), `features/` (verification map).
+In the repo: `scripts/fvtt.sh` (server lifecycle), `scripts/harness.mjs` (Playwright helpers), `scripts/import-pdf.mjs` (import journey), `scripts/open-importer.mjs` (open/close/reopen, fails on page errors), `scripts/suite.mjs` (every proven journey), `scripts/evidence.mjs` (stable shot names and the evidence model), `scripts/render-evidence.mjs` (the PR evidence block), `journeys.json` (proven vs recipe registry), `answers/*.json` (per-PDF review answers and expected end state), `features/` (verification map).
 
 ## One-time setup (already done on this machine)
 
@@ -89,7 +89,7 @@ import { session, openImporterFromSidebar, settle, action, tab, worldState, WIZA
 const s = await session({ url, evidence });           // joined as GM, module active
 await openImporterFromSidebar(s.page);
 await s.page.setInputFiles(`${WIZARD} #dpi-file`, pdf); await action(s.page, "read").click(); await settle(s.page);
-await tab(s.page, "advanced").click(); await s.shot("advanced");
+await tab(s.page, "advanced").click(); await s.shot("tab-advanced");
 await s.close();
 ```
 
@@ -97,16 +97,35 @@ Stable handles (from `src/wizard.ts` / `src/module.ts`): wizard root `#daggerhea
 
 ## Evidence
 
-Each journey writes to `$EVIDENCE/<pdf>-<HHMMSS>/`:
+`fvtt.sh launch` writes `$EVIDENCE/run.json` (Foundry build, Foundryborne version, module version, head SHA, run id). No home directory paths.
 
-- numbered screenshots of every step (`01-wizard-upload.png` … `07-review.png`, `08-created.png`, or `NN-failure.png`);
-- `content-matches.json` (each Content-tab entry: name, kind, chosen source);
-- `world-before.json` / `world-after.json`: every actor's prepared stats (level, traits, evasion, HP, Stress, armor, thresholds), items with compendium source / equipped / vault, Active Effects with changes, and import report status, read back from Foundry after creation;
-- `journey.log`, `browser-console.log` (look for `[daggerheart-demiplane-importer]` errors and `[pageerror]`), `result.json` (`pass`, `failures`, `pageErrors`).
+The suite writes each journey to `$EVIDENCE/<journey-id>/` (`open-importer/`, `druid/`, `luph-levelup-manual/`, …) and a `suite.json` summary. Screenshot file names are stable slugs, the same name every run:
 
-`stop` also copies `server.log` into `$EVIDENCE`.
+| Journey | Files |
+| --- | --- |
+| open | `sidebar-wizard.png`, `reopen-api.png`, `single-window.png` |
+| import | `wizard-upload.png`, `tab-character.png`, `tab-content.png`, `tab-advanced.png`, `tab-notes.png`, `character-answered.png`, `review.png`, `created-actor-sheet.png` |
 
-Proof standards:
+`created-actor-sheet.png` is the viewport after Create, once the new sheet has had a moment to open. A thrown error also writes `failure.png`. `shots.json` lists the slugs that were captured. These files stay in the evidence directory.
+
+Also in each journey directory: `content-matches.json` (import only), `world-before.json` / `world-after.json` (prepared stats, items, effects, report status, read back from Foundry), `journey.log`, `browser-console.log`, `result.json` (`kind`, `pass`, `failures`, `pageErrors`). `stop` copies `server.log` into `$EVIDENCE`. World JSON and the sample PDFs never go in the PR.
+
+## Publish the evidence
+
+After the suite, write one sentence about what you saw into each `$EVIDENCE/<journey-id>/observation.txt`. One line, no file paths, no JSON, no PDF names. Then:
+
+```sh
+node $S/render-evidence.mjs --evidence "$EVIDENCE" --check   # lists shots; uploads nothing
+node $S/render-evidence.mjs --evidence "$EVIDENCE"
+```
+
+The second command uploads each key png to this repository's GitHub user-attachments store (the same store as `gh pr edit --attach`) and prints a `## Live evidence` block. Paste that block into the PR description. `gh` must be logged in with write access to the repo. The upload set is the key png files for the journeys in the run. A symlink is refused, and so is a file whose bytes are not a PNG, including a shot name that points at a PDF.
+
+User-attachment URLs render in a GitHub PR description. The image bytes stay out of the git commit, with the sample PDFs and saved world. On a public repository the images are public once the description references them. Character names are visible in the screenshots. Attachments cannot be deleted afterwards; run `--check` first.
+
+If `gh` cannot upload, keep the local paths out of the description. Attach the pngs with `gh pr edit <number> --body-file <body.md> --attach <file.png>` for each shot. That flag rewrites matching local image links to user-attachment URLs.
+
+## Proof standards
 
 - Go through the user path (sidebar button and wizard controls). Do not call `executePlan`, `buildPlan` or set wizard fields in JS as proof. The only API shortcut is enabling the module in setup.
 - Prove the outcome from Foundry's own documents (`world-after.json`), not from the wizard's success message.

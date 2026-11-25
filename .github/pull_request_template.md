@@ -24,7 +24,7 @@
 - Head SHA:
 - CI:
 - Red then green (test or journey, base SHA vs head SHA):
-- Live Foundry evidence (import behaviour, class R, or a `tests/helpers.ts` mirror): link to the `## Live evidence` comment, or `needs-live-run` plus the reason and the journeys from `.claude/skills/verify-foundry-importer`
+- Live Foundry evidence (import behaviour, class R, or a `tests/helpers.ts` mirror): paste the `## Live evidence` block from `render-evidence.mjs` (head SHA, Foundry and Foundryborne versions, pass/fail, one observation, and screenshots per journey), or `needs-live-run` plus the reason and the journeys from `.claude/skills/verify-foundry-importer`
 - Package artifact (class M):
 
 ## User-facing strings
@@ -37,4 +37,4 @@
 
 ## Private data
 
-- [ ] No sample PDFs, character data, rules text, or Foundry licence data in this PR, its tests, or its evidence.
+- [ ] No sample PDFs, world JSON, rules text, or Foundry licence data in this PR or in git. Live screenshots, if any, are GitHub user-attachments. Character names in those images are visible to anyone who can read the PR.

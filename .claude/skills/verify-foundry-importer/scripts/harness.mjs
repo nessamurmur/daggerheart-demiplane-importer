@@ -3,6 +3,7 @@
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 import path from "node:path";
+import { recordShot, shotSpec } from "./evidence.mjs";
 
 export const MODULE_ID = "daggerheart-demiplane-importer";
 export const WIZARD = `#${MODULE_ID}`;            // ApplicationV2 root element id
@@ -28,10 +29,13 @@ export async function session({ url, evidence, headless = process.env.HEADED ? f
   const consoleLog = fs.createWriteStream(path.join(evidence, "browser-console.log"), { flags: "a" });
   page.on("console", m => consoleLog.write(`[${m.type()}] ${m.text()}\n`));
   page.on("pageerror", e => consoleLog.write(`[pageerror] ${e.stack ?? e}\n`));
-  let n = 0;
+  const shots = [];
   const shot = async name => {
-    const file = path.join(evidence, `${String(++n).padStart(2, "0")}-${name}.png`);
+    const spec = shotSpec(name);
+    const file = path.join(evidence, spec.file);
     await page.screenshot({ path: file, fullPage: false });
+    recordShot(shots, name);
+    writeJSON(evidence, "shots.json", shots);
     return file;
   };
   const log = (...args) => { const line = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" "); console.log(line); fs.appendFileSync(path.join(evidence, "journey.log"), line + "\n"); };

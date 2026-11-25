@@ -2,7 +2,7 @@
 
 Who this is for: whoever opens a PR here (a Cursor cloud agent, a Cursor session on NJ's machine, or NJ). The reviewer checks this list; a PR that meets it gets a verdict on the first pass. Read it before you start, not after you finish.
 
-A PR is merge-eligible only when all of these hold for its current head SHA: the latest `<!-- dpi-review:v1 ... -->` comment has `verdict` `SATISFIED` and `head_sha` equal to that head, the label is `review:satisfied`, CI is green, and the evidence below is posted. The review itself is a `COMMENT` from `nessamurmur`, because that account also opens the pull requests and GitHub will not accept `APPROVE` or `REQUEST_CHANGES`. "Tests pass" with no detail is not evidence.
+A PR is merge-eligible only when all of these hold for its current head SHA: the latest `<!-- dpi-review:v1 ... -->` comment has `verdict` `SATISFIED` and `head_sha` equal to that head, the label is `review:satisfied`, CI is green, and the evidence below is posted. The review itself is a `COMMENT` from `nessamurmur` or `cursor[bot]`. Either author counts. `nessamurmur` also opens the pull requests, so GitHub will not accept `APPROVE` or `REQUEST_CHANGES` from that account. "Tests pass" with no detail is not evidence.
 
 ## 1. Classify the change
 
@@ -27,16 +27,17 @@ When a PR spans classes, the strictest applies. Say which class you chose in the
 
 Read `journeys.json` in that skill and run the suite (`scripts/suite.mjs`): every entry with status `proven` and kind `open` or `import`. As of pull request #11 those are `open-importer`, `druid`, `ex_ampleton`, `luph`, `luph-levelup-manual`, and `raelyn`. `druid-stats-preserve` is an alias of `druid`, not a separate run. Recipe journeys (`oliver`, and the other `kind: "recipe"` entries) are not the suite; run one only when the change is about that recipe. Also run a new or changed journey when none of the proven journeys exercise the change through the UI path (sidebar button, wizard tabs, Create).
 
-Post a comment headed `## Live evidence` containing:
+Paste a `## Live evidence` section into the PR description, produced by `scripts/render-evidence.mjs` in that skill. The block contains:
 
-- Foundry build, Foundryborne version, module version (from `module.json`), head SHA, run id, machine label (not a path with a username).
-- The journeys run, one line each, `PASS` or `FAIL`.
-- For a fix, the same journey failing on the base commit (SHA) and passing on the head. Name the assertion.
-- `failures: 0` and `pageErrors: 0` from each `result.json`; say whether `browser-console.log` showed any `[daggerheart-demiplane-importer]` error or Foundry deprecation warning (paste the line if so).
-- Stat or document claims come from Foundry's own documents (`world-after.json`): the prepared value and the effect that produces it, never the wizard's success banner.
+- Head SHA, Foundry build, Foundryborne version, module version (from `module.json`), and run id. No home directory path.
+- One `PASS` or `FAIL` line per journey, then one observation sentence per journey (what you saw on screen).
+- The journey screenshots embedded as images: for an import, the wizard steps, the review screen, and the created actor sheet; for open-importer, the wizard opening. The image URLs are GitHub user-attachments, not files in the repository.
+- `failures: 0` and `pageErrors: 0` from each `result.json`, and whether `browser-console.log` showed a `[daggerheart-demiplane-importer]` error or a Foundry deprecation warning.
+- For a fix, in the Verification section, the same journey failing on the base commit (SHA) and passing on the head. Name the assertion.
+- Stat or document claims come from Foundry's own documents (`world-after.json` stays on the machine): the prepared value and the effect that produces it, never the wizard's success banner. Put that claim in the observation or Verification section, not by pasting the JSON.
 - If the Foundry build differs from `compatibility.verified` in `module.json`, say so. Change `verified` only when the run was on that build.
 
-The reviewer cannot open the evidence directory and will say the evidence is self-reported. Do not paste private character sheets, PDF text, or license data; journey names and the summary fields are enough.
+A live-evidence block with pass/fail text and no screenshots is incomplete. So is a block missing an observation for a journey. The reviewer cannot open the evidence directory. The screenshots in the PR description are the pictures they can check. Pass/fail lines are still the implementer's report. Do not paste `world-after.json`, PDF text, console dumps, or licence data. Character names show up in the screenshots; on a public PR those images are public. The sample PDFs stay out of git.
 
 If you cannot run E4, write `needs-live-run` in the Verification section with the reason and the exact journeys you would run, and stop. Apply the `needs-live-run` label when your account can create it. The verdict will be `NEEDS_EVIDENCE` until NJ's machine posts the block. A docs-only or CI-only change, or a manifest edit that cannot change import behaviour, does not need E4; say that in Verification instead of writing `needs-live-run`.
 
@@ -48,7 +49,7 @@ If you cannot run E4, write `needs-live-run` in the Verification section with th
 
 - `User-facing strings`: list each added or changed UI label, notification, README sentence, or error message (or "none"). This keeps authorship decisions for the Foundry AI policy visible.
 - `Requested by`: link or sentence showing NJ asked for the feature (not needed for a fix to a known defect).
-- `Private data`: "no sample PDFs, character data, or licence data in this PR".
+- `Private data`: no sample PDFs, world JSON, rules text, or Foundry licence data in the PR or in git. Live screenshots are GitHub user-attachments; character names in those images are visible on the PR.
 
 ## 4. Example Verification section (shape only)
 
@@ -56,7 +57,7 @@ If you cannot run E4, write `needs-live-run` in the Verification section with th
 ## Verification
 Class: R. Head: 4a41e01. CI check `ci`: <link> green.
 - `pnpm typecheck && pnpm test && pnpm build`: paste the counts the commands printed. Name the test or journey that fails on the base SHA and passes on the head, with the failing assertion.
-- Live (Foundry build, Foundryborne version, module version, run id): see the Live evidence comment. Journeys from `.claude/skills/verify-foundry-importer` `journeys.json`.
+- Live (Foundry build, Foundryborne version, module version, run id): the `## Live evidence` section in this description, from `render-evidence.mjs`, with an observation and screenshots per journey. Journeys from `.claude/skills/verify-foundry-importer` `journeys.json`.
 ```
 
 ## 5. Cloud agent machine
