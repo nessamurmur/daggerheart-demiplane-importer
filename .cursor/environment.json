@@ -1,0 +1,9 @@
+{
+  "name": "Daggerheart importer Foundry verify",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "chromeExecutablePath": "/usr/bin/google-chrome",
+  "install": "[ ! -d '/agent/repos/daggerheart-demiplane-importer' ] || cd '/agent/repos/daggerheart-demiplane-importer' || exit $?; bash scripts/cloud-agent-install.sh"
+}

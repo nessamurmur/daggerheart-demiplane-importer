@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { adjustmentEffects, buildPlan, executePlan, foundryRuntime, loadCatalog, makeReport, reportJSON, sanitizeSource } from "../src/importer.ts";
 import { resolveEntries } from "../src/core.ts";
 import { MODULE_ID, TRAITS } from "../src/types.ts";
-import { character, companionCheckboxesTaken, editableResolutions, LEVEL_TIERS, mockRuntime } from "./helpers.ts";
+import { character, companionCheckboxesTaken, editableResolutions, LEVEL_TIERS, lowerCompanionLevel, mockRuntime } from "./helpers.ts";
 
 const selections = (plan: { actorData: any }): any[] => Object.values<any>(plan.actorData.system.levelData.levelups).flatMap(r => r.selections);
 /** What Foundryborne's level-up dialog reads to mark a checkbox as taken: tier, option, and checkbox number, per level. */
@@ -272,6 +272,22 @@ test("companion training marks the checkboxes Foundryborne's companion level-up 
   assert.deepEqual(companionCheckboxesTaken(plan.companionData!.system.levelData.levelups), ["vicious #1", "stress #1", "evasion #1", "evasion #2"]);
 });
 
+test("lowering the companion's level removes the partner feature its training granted, as for training taken in Foundryborne", async () => {
+  const c = character({ level: "4" });
+  c.companion = { enabled: true, name: "Test companion", evasion: 12, stressMax: 4, stress: 0, attackName: "Bite", damageDice: "d6", damageType: "physical", range: "melee", experiences: [{ name: "Tracking", value: 2 }, { name: "Climbing", value: 2 }], notes: "", training: [{ type: "evasion", data: [] }, { type: "creatureComfort", data: [] }, { type: "stress", data: [] }] };
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, editableResolutions(c), runtime); plan.reviewed = true;
+  for (const comparison of plan.comparisons) comparison.choice ??= "foundry";
+  const { actor, companion } = await executePlan(plan, runtime);
+  const comfort = "DAGGERHEART.APPLICATIONS.Levelup.actions.creatureComfort.name";
+  const names = () => actor.items.map((i: any) => i.name);
+  assert(names().includes(comfort));
+  lowerCompanionLevel(actor, companion, 3);
+  assert(names().includes(comfort));
+  lowerCompanionLevel(actor, companion, 2);
+  assert(!names().includes(comfort));
+});
+
 test("unsupported playtest class domains remain recorded without breaking native domain lookups", async () => {
   const c = character({ "domain_card_name.0.0": "Playtest card", "domain_card_domain.0.0": "future" });
   const { runtime } = mockRuntime();
@@ -291,6 +307,7 @@ test("reports preserve the reviewed inputs, source values, exclusions and verifi
   assert.equal(report.reviewedCharacter.name, "Reviewed name");
   assert.equal(Object.fromEntries(report.reviewedCharacter.source.fields).name, "Source name");
   assert.equal(Object.fromEntries(report.fieldDisposition).ancestry_name, "reported");
+  assert(!report.items.some(i => i.kind === "ancestry"));
   assert.equal(Object.fromEntries(report.verifiedStats)["system.armorScore.max"], 4);
 });
 
@@ -544,6 +561,54 @@ test("a multiclass and a subclass upgrade are recorded in different tiers", asyn
   assert.deepEqual([multiclass.length, subclass.length], [1, 1]);
   assert.notEqual(multiclass[0], subclass[0]);
   assert.deepEqual(plan.levelHistory?.unplaced, []);
+});
+
+const multiclassCharacter = (extra: Record<string, string>) => {
+  const c = character({ subclass_name_1: "First Path", subclass_class_1: "Fixture Class", subclass_name_2: "Other Path", subclass_class_2: "Other Class", ...extra });
+  c.entries.find(e => e.name === "Other Class")!.domains = ["sage"];
+  return c;
+};
+
+test("a multiclass below the first tier that offers it blocks the import until the level is raised", async () => {
+  const { runtime } = mockRuntime();
+  const low = multiclassCharacter({ level: "4", ...proficiency(2) });
+  const blocked = await buildPlan(low, editableResolutions(low), runtime);
+  const blocking = blocked.issues.filter(i => i.blocking).map(i => i.message);
+  assert.equal(blocking.length, 1);
+  assert.match(blocking[0], /Other Class/);
+  assert.match(blocking[0], /level 5/);
+  assert.match(blocking[0], /raise the level/i);
+  assert.match(blocking[0], /remove the multiclass/i);
+  blocked.reviewed = true;
+  await assert.rejects(executePlan(blocked, runtime), /blocking issue/);
+
+  const raised = multiclassCharacter({ level: "5", ...proficiency(3) });
+  const plan = await buildPlan(raised, editableResolutions(raised), runtime);
+  assert.deepEqual(plan.issues.filter(i => i.blocking), []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t3 level 5"]);
+});
+
+test("a multiclass is recorded below level 5 when the actor's tiers offer it earlier", async () => {
+  const c = multiclassCharacter({ level: "3", ...proficiency(2) });
+  const { runtime } = mockRuntime();
+  const preview = runtime.preview;
+  runtime.preview = source => {
+    const actor = preview(source);
+    actor.system.levelupTiers.tiers[2].options.multiclass = { type: "multiclass", checkboxSelections: 2, minCost: 2 };
+    return actor;
+  };
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
+  assert.deepEqual(plan.issues.filter(i => i.blocking), []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t2 level 2"]);
+});
+
+test("a multiclass keeps its slot when the PDF shows more stat gains than the tiers hold", async () => {
+  const c = multiclassCharacter({ level: "5", hp_max: "12", evasion: "11", ...proficiency(3) });
+  const { runtime } = mockRuntime();
+  const plan = await buildPlan(c, editableResolutions(c), runtime);
+  assert.deepEqual(plan.issues.filter(i => i.blocking), []);
+  assert.deepEqual(selections(plan).filter(s => s.type === "multiclass").map(s => `t${s.tier} level ${s.level}`), ["t3 level 5"]);
+  assert(plan.levelHistory!.unplaced.every(p => p.includes("Hit Point")));
 });
 
 test("a PDF Proficiency below the level's minimum is reported and never stored as a base below 1", async () => {

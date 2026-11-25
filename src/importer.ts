@@ -107,10 +107,10 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   for (const e of c.entries.filter(e => !e.include)) for (const field of e.fields) issues.push({ code: "excluded-item", field, message: `${e.name}: excluded during review; source data retained in the report.` });
   const actorId = runtime.id();
   const sources: DocumentSource[] = [];
-  const plan: ResolvedImportPlan = { character: clone(c), resolutions: clone(resolutions), actorData: {}, itemSources: sources, comparisons: [], calculatedStats: {}, issues, systemVersion: runtime.version, reviewed: false };
-  for (const resolution of resolutions) {
+  const included = resolutions.filter(r => r.entry.include);
+  const plan: ResolvedImportPlan = { character: clone(c), resolutions: clone(included), actorData: {}, itemSources: sources, comparisons: [], calculatedStats: {}, issues, systemVersion: runtime.version, reviewed: false };
+  for (const resolution of included) {
     const e = resolution.entry;
-    if (!e.include) continue;
     if (!e.name.trim()) { issues.push(error("Every included item needs a name.")); continue; }
     if (resolution.selected === undefined) { issues.push(error(`Choose a content source for “${e.name}”.`)); continue; }
     let source: DocumentSource;
@@ -223,8 +223,10 @@ export async function buildPlan(c: ParsedCharacter, resolutions: Resolution[], r
   if (vaulted.length) issues.push({ code: "loadout-limit", message: `Foundryborne’s loadout holds ${limit} domain cards, so ${vaulted.join(", ")} ${vaulted.length === 1 ? "goes" : "go"} to the vault. To vault a different card, go back to the details and check its “In vault” box.` });
   const baseline = previewActor(expanded);
   const { stats, notes } = statEvidence(c, baseline, previewActor(expanded.filter(s => CLASS_TYPES.includes(s.type) || CLASS_TYPES.includes(s.system.granter?.type))));
-  const history = inferLevelups(levelupEvidence(c, expanded, baseline, stats, actorId));
+  const evidence = levelupEvidence(c, expanded, baseline, stats, actorId);
+  const history = inferLevelups(evidence);
   actorData.system.levelData.levelups = history.levelups;
+  if (evidence.multiclass && !Object.values(history.levelups).some(r => r.selections.some(s => s.type === "multiclass"))) issues.push(error(unrecordedMulticlass(evidence)));
   if (runtime.levelupAuto) {
     for (const [trait, bonus] of Object.entries(history.bonuses.traits)) actorData.system.traits[trait].value -= bonus;
     for (const [id, bonus] of Object.entries(history.bonuses.experiences)) actorData.system.experiences[id].value -= bonus;
@@ -314,6 +316,14 @@ function levelupEvidence(c: ParsedCharacter, items: DocumentSource[], baseline: 
   };
 }
 
+/** Foundryborne offers multiclass again to a character whose history lacks it, and refuses the second class if it is taken. */
+function unrecordedMulticlass(e: LevelupEvidence): string {
+  const name = e.multiclass!.name, first = Math.min(...e.tiers.filter(t => t.levels.start >= 2 && Object.values(t.options).some(o => o.type === "multiclass")).map(t => t.levels.start));
+  if (!Number.isFinite(first)) return `Multiclass “${name}” cannot be recorded: no level-up tier offers multiclassing. Remove the multiclass on the Content tab.`;
+  if (e.level < first) return `Multiclass “${name}” needs level ${first} or higher: the level-up tiers first offer multiclassing at level ${first}, and this character is level ${e.level}. Raise the level on the Character tab, or remove the multiclass on the Content tab.`;
+  return `Multiclass “${name}” does not fit the level-up history: no tier up to level ${e.level} has a free multiclass option. Raise the level on the Character tab, or remove the multiclass on the Content tab.`;
+}
+
 function historyIssue(history: LevelupHistory, notes: string[], levelupAuto: boolean): Issue {
   return { code: "level-history", message: [
     `Level-up history recorded from the PDF. ${history.summary.map(s => `Level ${s.level}: ${s.choices.join(", ") || "no choices identified"}.`).join(" ")}`,
@@ -335,6 +345,9 @@ export function adjustmentEffects(comparisons: StatComparison[], id: () => strin
   }));
 }
 
+/** Training whose feature Foundryborne puts on the partner, recording { onPartner, id } on the selection so a level rollback deletes it. */
+const PARTNER_FEATURE_TRAINING = new Set(["creatureComfort", "armored", "bonded"]);
+
 function companionSource(c: ParsedCharacter, runtime: ImportRuntime, partnerId: string): DocumentSource {
   const p = c.companion;
   const sum = (type: string, factor = 1) => p.training.filter(t => t.type === type).length * factor;
@@ -342,7 +355,7 @@ function companionSource(c: ParsedCharacter, runtime: ImportRuntime, partnerId: 
   const damageSteps = p.training.filter(t => t.type === "vicious" && t.data[0] === "damage").length;
   const rangeSteps = p.training.filter(t => t.type === "vicious" && t.data[0] === "range").length;
   // Foundryborne's companion level-up dialog has one tier, keyed 2, and numbers its checkboxes from 1.
-  const levelups = Object.fromEntries(p.training.map((t, i) => [String(i + 2), { achievements: { experiences: {}, domainCards: [], proficiency: 0 }, selections: [{ ...t, tier: 2, level: i + 2, optionKey: t.type, checkboxNr: p.training.slice(0, i).filter(x => x.type === t.type).length + 1, value: t.type === "evasion" ? 2 : 1, data: t.data, features: [] }] }]));
+  const levelups = Object.fromEntries(p.training.map((t, i) => [String(i + 2), { achievements: { experiences: {}, domainCards: [], proficiency: 0 }, selections: [{ ...t, tier: 2, level: i + 2, optionKey: t.type, checkboxNr: p.training.slice(0, i).filter(x => x.type === t.type).length + 1, value: t.type === "evasion" ? 2 : 1, data: t.data, features: PARTNER_FEATURE_TRAINING.has(t.type) ? [{ onPartner: true, id: runtime.id() }] : [] }] }]));
   return {
     _id: runtime.id(), name: p.name, type: "companion",
     system: {
@@ -419,9 +432,9 @@ export async function executePlan(plan: ResolvedImportPlan, runtime: ImportRunti
       created.push(companion);
       await update(actor, { "system.companion": companion.uuid }, "Foundry declined to link the companion to the character.");
       report.companionUuid = companion.uuid;
-      for (const training of plan.character.companion.training.filter(t => ["creatureComfort", "armored", "bonded"].includes(t.type))) {
+      for (const training of Object.values<any>(plan.companionData.system.levelData.levelups).flatMap(r => r.selections)) for (const { id } of training.features) {
         const prefix = `DAGGERHEART.APPLICATIONS.Levelup.actions.${training.type}`, name = runtime.localize(`${prefix}.name`);
-        await createEmbedded(actor, "Item", [{ _id: runtime.id(), name, type: "feature", system: { description: paragraphs(runtime.localize(`${prefix}.description`)) }, flags: { [MODULE_ID]: { companionTraining: training.type } } }], `Foundry declined to add the companion training feature “${name}”.`);
+        await createEmbedded(actor, "Item", [{ _id: id, name, type: "feature", system: { description: paragraphs(runtime.localize(`${prefix}.description`)) }, flags: { [MODULE_ID]: { companionTraining: training.type } } }], `Foundry declined to add the companion training feature “${name}”.`);
       }
     }
     const c = plan.character;

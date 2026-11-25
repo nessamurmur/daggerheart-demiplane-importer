@@ -24,3 +24,7 @@ NJ initiates features. Do not add features nobody asked for. Fixes to known defe
 ## Review
 
 Verdicts are posted from the repository owner's account (`nessamurmur`), which also authors the pull requests. GitHub will not accept `APPROVE` or `REQUEST_CHANGES` on those pull requests. The reviewer posts a `COMMENT` review, one marker comment `<!-- dpi-review:v1 ... -->` with `verdict` and `head_sha`, and exactly one `review:*` label. That marker and label are what the merge rule reads. Follow `docs/review/reviewer.md`.
+
+## Live Foundry on a cloud agent
+
+Item 4 says a cloud agent cannot run the suite. Use that only when the Foundry secrets are missing or the private sample PDFs are not on the machine. When they are present, run `scripts/foundry-verify-server.sh up`, drive the suite against the `URL` it prints, then `scripts/foundry-verify-server.sh down`. `EVIDENCE` is the directory `render-evidence.mjs` reads (pull request #13): `run.json` at the top, and one folder per journey after the suite. Write one observation per journey and paste the printed `## Live evidence` block into the PR description. One Foundry licence allows one active server. Details: `docs/review/cloud-foundry.md`.
